@@ -1,5 +1,6 @@
 import { checkScenarioInvariants } from '@/domain/invariants';
-import type { MutationResult, ScenarioState } from '@/domain/types';
+import { calculatePlanSummary } from '@/domain/scoring';
+import type { DomainError, MutationResult, ScenarioState } from '@/domain/types';
 
 export type AssignContributionInput = {
   taskId: string;
@@ -7,6 +8,28 @@ export type AssignContributionInput = {
   expectedVersion: number;
   actor?: 'human' | 'agent';
 };
+
+export type AssignmentPreviewResult =
+  | {
+      ok: true;
+      preview: {
+        planId: string;
+        expectedVersion: number;
+        taskId: string;
+        taskLabel: string;
+        contributionId: string;
+        contributionLabel: string;
+        participantName: string;
+        readinessBefore: number;
+        readinessAfter: number;
+        coverageBefore: number;
+        coverageAfter: number;
+        blockingGapsBefore: number;
+        blockingGapsAfter: number;
+        lockedConstraintChanges: 0;
+      };
+    }
+  | { ok: false; error: DomainError };
 
 export function assignContributionToTask(
   current: ScenarioState,
@@ -71,4 +94,38 @@ export function assignContributionToTask(
   }
 
   return { ok: true, scenario: next };
+}
+
+export function previewContributionAssignment(
+  current: ScenarioState,
+  input: AssignContributionInput,
+): AssignmentPreviewResult {
+  const result = assignContributionToTask(current, input);
+  if (!result.ok) return result;
+
+  const before = calculatePlanSummary(current);
+  const after = calculatePlanSummary(result.scenario);
+  const task = current.plan.tasks.find((item) => item.id === input.taskId)!;
+  const contribution = current.contributions.find((item) => item.id === input.contributionId)!;
+  const participant = current.participants.find((item) => item.id === contribution.participantId)!;
+
+  return {
+    ok: true,
+    preview: {
+      planId: current.plan.id,
+      expectedVersion: current.plan.version,
+      taskId: task.id,
+      taskLabel: task.label,
+      contributionId: contribution.id,
+      contributionLabel: contribution.label,
+      participantName: participant.displayName,
+      readinessBefore: before.readiness,
+      readinessAfter: after.readiness,
+      coverageBefore: before.coveredTasks,
+      coverageAfter: after.coveredTasks,
+      blockingGapsBefore: before.openGaps,
+      blockingGapsAfter: after.openGaps,
+      lockedConstraintChanges: 0,
+    },
+  };
 }
