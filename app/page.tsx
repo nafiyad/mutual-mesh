@@ -1,23 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-
-const contributions = [
-  { initials: 'JR', name: 'Jordan', detail: 'Accessible room · 60 seats', tone: 'teal' },
-  { initials: 'AS', name: 'Aisha', detail: 'Interview speaker · 6–7 PM', tone: 'amber' },
-  { initials: 'MK', name: 'Maya', detail: 'Projector + HDMI adapter', tone: 'blue' },
-  { initials: 'CL', name: 'Carlos', detail: 'Equipment transport · after 4:30', tone: 'teal' },
-  { initials: 'PN', name: 'Priya', detail: 'Event poster · 36h notice', tone: 'amber' },
-  { initials: 'NR', name: 'Noor', detail: 'Host + accessibility check', tone: 'blue' },
-];
+import { useEffect, useMemo, useState } from 'react';
+import { calculatePlanSummary } from '@/domain/scoring';
+import type { Contribution, PlanTask, ScenarioState } from '@/domain/types';
+import { useMutualMeshStore } from '@/store/useMutualMeshStore';
 
 const agentPrompt = 'Use available contributions to close the final gap. Keep every locked constraint.';
-
-const activity = [
-  { actor: 'Agent', action: 'Validated draft plan', time: 'Just now', tone: 'agent' },
-  { actor: 'You', action: 'Locked accessibility', time: '2 min ago', tone: 'human' },
-  { actor: 'Agent', action: 'Matched 8 contributions', time: '3 min ago', tone: 'agent' },
-];
+const tones = ['teal', 'amber', 'blue'] as const;
 
 function BrandMark() {
   return (
@@ -59,17 +48,85 @@ function MeshNode({
   );
 }
 
+function taskByKey(tasks: PlanTask[], key: string) {
+  return tasks.find((task) => task.key === key)!;
+}
+
+function contributionDetail(contribution: Contribution) {
+  return contribution.label;
+}
+
 export default function Home() {
+  const goal = useMutualMeshStore((state) => state.goal);
+  const constraints = useMutualMeshStore((state) => state.constraints);
+  const participants = useMutualMeshStore((state) => state.participants);
+  const contributions = useMutualMeshStore((state) => state.contributions);
+  const plan = useMutualMeshStore((state) => state.plan);
+  const commitments = useMutualMeshStore((state) => state.commitments);
+  const activity = useMutualMeshStore((state) => state.activity);
+  const hasHydrated = useMutualMeshStore((state) => state.hasHydrated);
+  const resetDemo = useMutualMeshStore((state) => state.resetDemo);
+  const assignContribution = useMutualMeshStore((state) => state.assignContribution);
+
   const [showMoreContributions, setShowMoreContributions] = useState(false);
   const [showAlternatives, setShowAlternatives] = useState(false);
   const [fitMode, setFitMode] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
 
-  const resetPreview = () => {
+  useEffect(() => {
+    void useMutualMeshStore.persist.rehydrate();
+  }, []);
+
+  const scenario: ScenarioState = useMemo(() => ({
+    schemaVersion: 1,
+    goal,
+    constraints,
+    participants,
+    contributions,
+    plan,
+    commitments,
+    activity,
+  }), [activity, commitments, constraints, contributions, goal, participants, plan]);
+
+  const summary = useMemo(() => calculatePlanSummary(scenario), [scenario]);
+  const participantMap = useMemo(
+    () => new Map(participants.map((participant) => [participant.id, participant])),
+    [participants],
+  );
+  const filteredContributions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return contributions;
+    return contributions.filter((contribution) => {
+      const participant = participantMap.get(contribution.participantId);
+      return [participant?.displayName, contribution.label, contribution.capability]
+        .some((value) => value?.toLowerCase().includes(query));
+    });
+  }, [contributions, participantMap, searchQuery]);
+
+  const visibleContributions = filteredContributions.slice(0, showMoreContributions || searchQuery ? 8 : 3);
+  const transportTask = taskByKey(plan.tasks, 'transport');
+  const transportOpen = transportTask.status === 'gap';
+
+  const reset = () => {
+    resetDemo();
     setShowMoreContributions(false);
     setShowAlternatives(false);
     setFitMode(false);
     setCopied(false);
+    setSearchQuery('');
+    setActionMessage('Demo reset to the deterministic starting state.');
+  };
+
+  const closeTransportGap = () => {
+    const result = assignContribution('task-transport', 'contribution-transport', plan.version);
+    if (result.ok) {
+      setShowAlternatives(false);
+      setActionMessage('Carlos is now suggested for equipment pickup. Plan advanced to version 4.');
+      return;
+    }
+    setActionMessage(`${result.error.message} ${result.error.recoveryHint}`);
   };
 
   const copyPrompt = async () => {
@@ -77,6 +134,10 @@ export default function Home() {
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
   };
+
+  const venue = taskByKey(plan.tasks, 'venue');
+  const av = taskByKey(plan.tasks, 'av');
+  const refreshments = taskByKey(plan.tasks, 'refreshments');
 
   return (
     <main className="app-shell">
@@ -99,36 +160,40 @@ export default function Home() {
         </div>
 
         <div className="topbar-actions">
-          <span className="tool-status"><StatusDot /> WebMCP design · 9 tools</span>
-          <button className="button button-ghost" type="button" onClick={resetPreview}>Reset preview</button>
+          <span className="tool-status">
+            <StatusDot /> {hasHydrated ? 'Foundation live · tools next' : 'Restoring local demo'}
+          </span>
+          <button className="button button-ghost" type="button" onClick={reset}>Reset demo</button>
           <button className="avatar-button" type="button" aria-label="Open coordinator profile">RM</button>
         </div>
       </header>
+
+      {actionMessage ? <div className="action-toast" role="status">{actionMessage}</div> : null}
 
       <section className="workspace" id="main-canvas">
         <aside className="left-rail" aria-label="Goal and available contributions">
           <section className="panel goal-panel">
             <div className="panel-heading">
               <span className="eyebrow">Active goal</span>
-              <span className="version-pill">Draft v3</span>
+              <span className="version-pill">Draft v{plan.version}</span>
             </div>
-            <h1>Host an accessible career night for 50 students</h1>
-            <p className="goal-summary">A free, practical evening built from the people and resources already in this community.</p>
+            <h1>{goal.title}</h1>
+            <p className="goal-summary">{goal.description}</p>
 
             <dl className="goal-facts">
               <div><dt>When</dt><dd>Thu · 6–8 PM</dd></div>
-              <div><dt>Budget</dt><dd>$150 maximum</dd></div>
-              <div><dt>Attendance</dt><dd>50 students</dd></div>
+              <div><dt>Budget</dt><dd>${goal.budgetLimit} maximum</dd></div>
+              <div><dt>Attendance</dt><dd>{goal.attendanceTarget} students</dd></div>
             </dl>
 
             <div className="constraint-heading">
               <span>Locked constraints</span>
-              <span className="count-badge">3</span>
+              <span className="count-badge">{constraints.filter((constraint) => constraint.lockedByHuman).length}</span>
             </div>
             <div className="constraint-list">
-              <span className="constraint-chip"><span aria-hidden="true">◆</span> Wheelchair accessible</span>
-              <span className="constraint-chip"><span aria-hidden="true">◆</span> Max 2 tasks / person</span>
-              <span className="constraint-chip"><span aria-hidden="true">◆</span> Human approval required</span>
+              {constraints.filter((constraint) => constraint.lockedByHuman).map((constraint) => (
+                <span className="constraint-chip" key={constraint.id}><span aria-hidden="true">◆</span> {constraint.label}</span>
+              ))}
             </div>
           </section>
 
@@ -138,25 +203,41 @@ export default function Home() {
                 <span className="eyebrow">Available now</span>
                 <h2>Community contributions</h2>
               </div>
-              <button className="icon-button" type="button" aria-label="Add a contribution">+</button>
+              <span className="inventory-count">{filteredContributions.length}</span>
             </div>
+            <label className="search-field">
+              <span className="search-icon" aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search people or resources"
+                aria-label="Search community contributions"
+              />
+            </label>
             <div className="contribution-list">
-              {contributions.slice(0, showMoreContributions ? 6 : 3).map((contribution) => (
-                <article className="contribution" key={contribution.name}>
-                  <span className={`contribution-avatar avatar-${contribution.tone}`}>{contribution.initials}</span>
-                  <span><strong>{contribution.name}</strong><small>{contribution.detail}</small></span>
-                  <span className="availability" aria-label="Available" />
-                </article>
-              ))}
+              {visibleContributions.map((contribution, index) => {
+                const participant = participantMap.get(contribution.participantId)!;
+                return (
+                  <article className="contribution" key={contribution.id}>
+                    <span className={`contribution-avatar avatar-${tones[index % tones.length]}`}>{participant.avatarSeed}</span>
+                    <span><strong>{participant.displayName}</strong><small>{contributionDetail(contribution)}</small></span>
+                    <span className="availability" aria-label={contribution.availability} />
+                  </article>
+                );
+              })}
+              {visibleContributions.length === 0 ? <p className="empty-copy">No matching contributions. Try a skill, person, or resource.</p> : null}
             </div>
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => setShowMoreContributions((current) => !current)}
-              aria-expanded={showMoreContributions}
-            >
-              {showMoreContributions ? 'Show fewer contributions' : 'View more contributions'} <span aria-hidden="true">→</span>
-            </button>
+            {!searchQuery && filteredContributions.length > 3 ? (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setShowMoreContributions((current) => !current)}
+                aria-expanded={showMoreContributions}
+              >
+                {showMoreContributions ? 'Show fewer contributions' : `View all ${filteredContributions.length} contributions`} <span aria-hidden="true">→</span>
+              </button>
+            ) : null}
           </section>
         </aside>
 
@@ -180,7 +261,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className={`mesh-stage ${fitMode ? 'mesh-stage-fit' : ''}`}>
+          <div className={`mesh-stage ${fitMode ? 'mesh-stage-fit' : ''} ${transportOpen ? '' : 'mesh-stage-complete'}`}>
             <div className="mesh-grid" aria-hidden="true" />
             <div className="mesh-line line-a" aria-hidden="true" />
             <div className="mesh-line line-b" aria-hidden="true" />
@@ -189,29 +270,37 @@ export default function Home() {
             <div className="mesh-line line-e" aria-hidden="true" />
             <div className="mesh-line line-f" aria-hidden="true" />
 
-            <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status="87% ready" />
-            <MeshNode className="node-venue" eyebrow="Task" title="Venue" meta="Accessible · 60 seats" status="covered" />
+            <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status={`${summary.readiness}% ready`} />
+            <MeshNode className="node-venue" eyebrow="Task" title={venue.label} meta="Accessible · 60 seats" status="covered" />
             <MeshNode className="node-speakers" eyebrow="Task" title="Speakers" meta="2 of 2 matched" status="covered" />
-            <MeshNode className="node-av" eyebrow="Task" title="Presentation AV" meta="Projector + adapter" status="review" />
-            <MeshNode className="node-refreshments" eyebrow="Task" title="Refreshments" meta="$120 · 50 snack packs" status="covered" />
+            <MeshNode className="node-av" eyebrow="Task" title={av.label} meta="Projector + adapter" status={transportOpen ? 'review' : 'covered'} />
+            <MeshNode className="node-refreshments" eyebrow="Task" title={refreshments.label} meta="$120 · 50 snack packs" status="covered" />
             <MeshNode className="node-jordan" eyebrow="Contributor" title="Jordan" meta="Community room" status="suggested" />
             <MeshNode className="node-maya" eyebrow="Contributor" title="Maya" meta="Projector" status="suggested" />
-            <article className="mesh-gap node-gap">
-              <span aria-hidden="true">+</span>
-              <strong>1 open gap</strong>
-              <small>Equipment pickup</small>
-            </article>
+            {transportOpen ? (
+              <article className="mesh-gap node-gap">
+                <span aria-hidden="true">+</span>
+                <strong>1 open gap</strong>
+                <small>Equipment pickup</small>
+              </article>
+            ) : (
+              <article className="mesh-gap mesh-gap-resolved node-gap">
+                <span aria-hidden="true">✓</span>
+                <strong>Gap covered</strong>
+                <small>Carlos · equipment pickup</small>
+              </article>
+            )}
 
             <div className="agent-presence" role="status">
               <span className="agent-spark" aria-hidden="true">✦</span>
-              <span><strong>Agent checked this plan</strong><small>Budget, capacity, access & workload</small></span>
+              <span><strong>Shared state is version-safe</strong><small>UI actions and future tools use one plan model</small></span>
             </div>
           </div>
 
           <div className="agent-prompt">
             <span className="prompt-icon" aria-hidden="true">✦</span>
             <div>
-              <span className="eyebrow">Try it with your agent</span>
+              <span className="eyebrow">Canonical agent prompt</span>
               <p>“{agentPrompt}”</p>
             </div>
             <button className="copy-button" type="button" onClick={copyPrompt} aria-live="polite">
@@ -224,52 +313,59 @@ export default function Home() {
           <section className="panel readiness-panel">
             <div className="panel-heading">
               <span className="eyebrow">Plan readiness</span>
-              <span className="trend-pill">+24%</span>
+              <span className="trend-pill">v{plan.version}</span>
             </div>
-            <div className="readiness-score"><strong>87</strong><span>%</span></div>
-            <div className="progress-track" aria-label="Plan readiness: 87 percent"><span style={{ width: '87%' }} /></div>
+            <div className="readiness-score"><strong>{summary.readiness}</strong><span>%</span></div>
+            <div className="progress-track" aria-label={`Plan readiness: ${summary.readiness} percent`}><span style={{ width: `${summary.readiness}%` }} /></div>
             <div className="metric-grid">
-              <div><small>Budget</small><strong>$120 / $150</strong></div>
-              <div><small>Coverage</small><strong>7 / 8 tasks</strong></div>
-              <div><small>Commitments</small><strong>0 requested</strong></div>
-              <div><small>Risk</small><strong className="risk-medium"><StatusDot tone="warning" /> Medium</strong></div>
+              <div><small>Budget</small><strong>${summary.budgetSpent} / ${goal.budgetLimit}</strong></div>
+              <div><small>Coverage</small><strong>{summary.coveredTasks} / {summary.totalTasks} tasks</strong></div>
+              <div><small>Commitments</small><strong>{summary.commitmentRequests} requested</strong></div>
+              <div><small>Risk</small><strong className={summary.risk === 'Medium' ? 'risk-medium' : 'risk-low'}><StatusDot tone={summary.risk === 'Medium' ? 'warning' : 'ready'} /> {summary.risk}</strong></div>
             </div>
           </section>
 
-          <section className="gap-card">
-            <div className="gap-icon" aria-hidden="true">!</div>
+          <section className={`gap-card ${transportOpen ? '' : 'gap-card-resolved'}`}>
+            <div className="gap-icon" aria-hidden="true">{transportOpen ? '!' : '✓'}</div>
             <div>
-              <span className="eyebrow">Needs attention</span>
-              <h2>Equipment pickup has no owner</h2>
-              <p>The projector must arrive before setup begins at 5:30 PM.</p>
-              <button
-                className="text-button"
-                type="button"
-                onClick={() => setShowAlternatives((current) => !current)}
-                aria-expanded={showAlternatives}
-              >
-                {showAlternatives ? 'Hide alternatives' : 'Show alternatives'} <span aria-hidden="true">→</span>
-              </button>
-              {showAlternatives ? (
-                <div className="alternative-card" role="status">
-                  <strong>Carlos is available</strong>
-                  <small>Transport after 4:30 PM · no schedule conflict</small>
-                </div>
-              ) : null}
+              <span className="eyebrow">{transportOpen ? 'Needs attention' : 'Foundation mutation complete'}</span>
+              <h2>{transportOpen ? 'Equipment pickup has no owner' : 'Equipment pickup is covered'}</h2>
+              <p>{transportOpen ? 'The projector must arrive before setup begins at 5:30 PM.' : 'Carlos is suggested without changing any locked constraint.'}</p>
+              {transportOpen ? (
+                <>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => setShowAlternatives((current) => !current)}
+                    aria-expanded={showAlternatives}
+                  >
+                    {showAlternatives ? 'Hide viable match' : 'Find a viable match'} <span aria-hidden="true">→</span>
+                  </button>
+                  {showAlternatives ? (
+                    <div className="alternative-card">
+                      <strong>Carlos is available</strong>
+                      <small>Transport after 4:30 PM · capability and schedule match</small>
+                      <button className="button button-primary" type="button" onClick={closeTransportGap}>Suggest Carlos</button>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <button className="text-button" type="button" onClick={reset}>Reset and test again <span aria-hidden="true">→</span></button>
+              )}
             </div>
           </section>
 
           <section className="panel activity-panel">
             <div className="section-title-row">
               <div><span className="eyebrow">Shared history</span><h2>Recent activity</h2></div>
-              <button className="icon-button icon-button-small" type="button" aria-label="Open full activity log">↗</button>
+              <span className="inventory-count">{activity.length}</span>
             </div>
             <ol className="activity-list">
-              {activity.map((item) => (
-                <li key={`${item.actor}-${item.action}`}>
-                  <span className={`activity-dot activity-${item.tone}`} aria-hidden="true" />
-                  <span><strong>{item.actor}</strong><small>{item.action}</small></span>
-                  <time>{item.time}</time>
+              {activity.slice(0, 4).map((item) => (
+                <li key={item.id}>
+                  <span className={`activity-dot activity-${item.actor === 'agent' ? 'agent' : 'human'}`} aria-hidden="true" />
+                  <span><strong>{item.actor === 'human' ? 'You' : item.actor === 'agent' ? 'Agent' : 'System'}</strong><small>{item.action}</small></span>
+                  <time>v{item.planVersionAfter ?? plan.version}</time>
                 </li>
               ))}
             </ol>
