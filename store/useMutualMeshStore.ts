@@ -4,7 +4,13 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { createSeedScenario } from '@/data/seedScenario';
 import type { MutationResult, ScenarioState } from '@/domain/types';
-import { assignContributionToTask } from '@/services/coordinationService';
+import {
+  assignContributionToTask,
+  replaceDraftCoordinationPlan,
+  reviseDraftCoordinationPlan,
+  type DraftCoordinationPlanInput,
+  type ReviseCoordinationPlanInput,
+} from '@/services/coordinationService';
 import { migratePersistedScenario } from '@/store/migrations';
 
 type MutualMeshActions = {
@@ -12,11 +18,13 @@ type MutualMeshActions = {
   setHasHydrated: (value: boolean) => void;
   resetDemo: () => void;
   assignContribution: (taskId: string, contributionId: string, expectedVersion: number) => MutationResult;
+  replaceDraft: (input: DraftCoordinationPlanInput) => MutationResult;
+  reviseDraft: (input: ReviseCoordinationPlanInput) => MutationResult;
 };
 
 export type MutualMeshStore = ScenarioState & MutualMeshActions;
 
-function scenarioFromStore(store: MutualMeshStore): ScenarioState {
+export function scenarioFromStore(store: MutualMeshStore): ScenarioState {
   return {
     schemaVersion: store.schemaVersion,
     goal: store.goal,
@@ -43,6 +51,16 @@ export const useMutualMeshStore = create<MutualMeshStore>()(
           expectedVersion,
           actor: 'human',
         });
+        if (result.ok) set({ ...result.scenario });
+        return result;
+      },
+      replaceDraft: (input) => {
+        const result = replaceDraftCoordinationPlan(scenarioFromStore(get()), input);
+        if (result.ok) set({ ...result.scenario });
+        return result;
+      },
+      reviseDraft: (input) => {
+        const result = reviseDraftCoordinationPlan(scenarioFromStore(get()), input);
         if (result.ok) set({ ...result.scenario });
         return result;
       },

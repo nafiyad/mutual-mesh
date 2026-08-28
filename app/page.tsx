@@ -6,8 +6,10 @@ import { validatePlan } from '@/domain/validation';
 import type { Contribution, PlanTask, ScenarioState } from '@/domain/types';
 import { previewContributionAssignment, type AssignmentPreviewResult } from '@/services/coordinationService';
 import { useMutualMeshStore } from '@/store/useMutualMeshStore';
+import { WEBMCP_TOOL_CATALOG } from '@/webmcp/registerTools';
+import { useWebMCPRegistration } from '@/webmcp/useWebMCPRegistration';
 
-const agentPrompt = 'Use available contributions to close the final gap. Keep every locked constraint.';
+const agentPrompt = 'Inspect the live coordination context, search for an available equipment-transport contribution, revise only the current plan version to close the gap, then validate it. Keep every locked constraint and do not contact participants or publish.';
 const tones = ['teal', 'amber', 'blue'] as const;
 type ContributionFilter = 'all' | 'skills' | 'resources' | 'logistics';
 type InspectorTab = 'overview' | 'validation' | 'history';
@@ -64,7 +66,21 @@ function MeshNode({
 }
 
 function taskByKey(tasks: PlanTask[], key: string) {
-  return tasks.find((task) => task.key === key)!;
+  return tasks.find((task) => task.key === key);
+}
+
+function displayTask(tasks: PlanTask[], key: string, label: string, requiredCapability: string): PlanTask {
+  return taskByKey(tasks, key) ?? tasks.find((task) => task.requiredCapability === requiredCapability) ?? tasks[0] ?? {
+    id: `display-${key}`,
+    key,
+    label,
+    requiredCapability,
+    startsAt: '2026-09-10T18:00:00-06:00',
+    endsAt: '2026-09-10T20:00:00-06:00',
+    contributionIds: [],
+    dependencyTaskIds: [],
+    status: 'gap',
+  };
 }
 
 function contributionDetail(contribution: Contribution) {
@@ -82,6 +98,7 @@ export default function Home() {
   const hasHydrated = useMutualMeshStore((state) => state.hasHydrated);
   const resetDemo = useMutualMeshStore((state) => state.resetDemo);
   const assignContribution = useMutualMeshStore((state) => state.assignContribution);
+  const { registration: webmcp, recentCalls } = useWebMCPRegistration(hasHydrated);
 
   const [showMoreContributions, setShowMoreContributions] = useState(false);
   const [showAlternatives, setShowAlternatives] = useState(false);
@@ -95,19 +112,23 @@ export default function Home() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('overview');
   const [validatedVersion, setValidatedVersion] = useState<number | null>(null);
+  const [toolInventoryOpen, setToolInventoryOpen] = useState(false);
 
   useEffect(() => {
     void useMutualMeshStore.persist.rehydrate();
   }, []);
 
   useEffect(() => {
-    if (!inspectorOpen) return;
+    if (!inspectorOpen && !toolInventoryOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setInspectorOpen(false);
+      if (event.key === 'Escape') {
+        setInspectorOpen(false);
+        setToolInventoryOpen(false);
+      }
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [inspectorOpen]);
+  }, [inspectorOpen, toolInventoryOpen]);
 
   const scenario: ScenarioState = useMemo(() => ({
     schemaVersion: 1,
@@ -143,7 +164,7 @@ export default function Home() {
 
   const visibleContributions = filteredContributions.slice(0, showMoreContributions || searchQuery ? 8 : 3);
   const transportTask = taskByKey(plan.tasks, 'transport');
-  const transportOpen = transportTask.status === 'gap';
+  const transportOpen = transportTask?.status === 'gap';
 
   const reset = () => {
     resetDemo();
@@ -156,6 +177,7 @@ export default function Home() {
     setRevisionPreview(null);
     setSelectedGraphNode(null);
     setValidatedVersion(null);
+    setToolInventoryOpen(false);
     setActionMessage('Demo reset to the deterministic starting state.');
   };
 
@@ -187,6 +209,7 @@ export default function Home() {
   };
 
   const openInspector = (tab: InspectorTab) => {
+    setToolInventoryOpen(false);
     setInspectorTab(tab);
     setInspectorOpen(true);
   };
@@ -206,9 +229,9 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
-  const venue = taskByKey(plan.tasks, 'venue');
-  const av = taskByKey(plan.tasks, 'av');
-  const refreshments = taskByKey(plan.tasks, 'refreshments');
+  const venue = displayTask(plan.tasks, 'venue', 'Venue', 'accessible-venue');
+  const av = displayTask(plan.tasks, 'av', 'Presentation AV', 'presentation-av');
+  const refreshments = displayTask(plan.tasks, 'refreshments', 'Refreshments', 'refreshments');
   const ownersForTask = (task: PlanTask) => task.contributionIds
     .map((id) => contributions.find((contribution) => contribution.id === id))
     .map((contribution) => contribution ? participantMap.get(contribution.participantId)?.displayName : undefined)
@@ -236,9 +259,19 @@ export default function Home() {
         </div>
 
         <div className="topbar-actions">
-          <span className="tool-status">
-            <StatusDot /> {hasHydrated ? 'Foundation live · tools next' : 'Restoring local demo'}
-          </span>
+          <button
+            className="tool-status tool-status-button"
+            type="button"
+            onClick={() => { setInspectorOpen(false); setToolInventoryOpen(true); }}
+            aria-haspopup="dialog"
+          >
+            <StatusDot tone={webmcp.status === 'ready' ? 'ready' : 'warning'} />
+            {webmcp.status === 'ready' ? `WebMCP ready · ${webmcp.registeredTools.length} tools`
+              : webmcp.status === 'unavailable' ? 'WebMCP unavailable · UI active'
+                : webmcp.status === 'failed' ? 'WebMCP registration needs attention'
+                  : webmcp.status === 'registering' ? 'Registering 6 WebMCP tools'
+                    : 'Restoring local demo'}
+          </button>
           <button className="button button-ghost" type="button" onClick={reset}>Reset demo</button>
           <button className="avatar-button" type="button" aria-label="Open coordinator profile">RM</button>
         </div>
@@ -632,6 +665,55 @@ export default function Home() {
             <footer className="inspector-footer">
               <span><StatusDot tone={validation.blockingCount ? 'warning' : 'ready'} /> {validation.blockingCount ? 'Human workflow has one blocker' : 'Human-interface phase exit gate passed'}</span>
               <small>{validation.blockingCount ? 'Preview and apply the Carlos revision.' : 'Next phase: request participant commitments through WebMCP.'}</small>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+
+      {toolInventoryOpen ? (
+        <div className="inspector-backdrop tool-inventory-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.currentTarget === event.target) setToolInventoryOpen(false);
+        }}>
+          <section className="tool-inventory-drawer" role="dialog" aria-modal="true" aria-labelledby="tool-inventory-title">
+            <header className="inspector-header">
+              <div>
+                <span className="eyebrow">Agent interface · imperative WebMCP</span>
+                <h2 id="tool-inventory-title">Six tools share this live workspace</h2>
+                <p>Agents inspect the same state you see. Draft writes are transactional, version-safe, and never contact participants or publish.</p>
+              </div>
+              <button className="inspector-close" type="button" onClick={() => setToolInventoryOpen(false)} aria-label="Close WebMCP tool inventory" autoFocus>×</button>
+            </header>
+
+            <div className="tool-inventory-status" role="status">
+              <span className={`tool-inventory-orb tool-inventory-orb-${webmcp.status}`} aria-hidden="true" />
+              <div>
+                <strong>{webmcp.status === 'ready' ? 'Discoverable now' : webmcp.status === 'unavailable' ? 'Compatible browser required for agent discovery' : webmcp.status === 'failed' ? 'Registration failed' : 'Preparing agent tools'}</strong>
+                <small>{webmcp.status === 'ready' ? `${webmcp.registeredTools.length} of ${WEBMCP_TOOL_CATALOG.length} tools registered on the top-level page.`
+                  : webmcp.status === 'unavailable' ? 'The complete human interface remains available as the normal fallback.'
+                    : webmcp.error ?? 'Restoring state before registration prevents tools from reading stale data.'}</small>
+              </div>
+            </div>
+
+            <div className="tool-inventory-list">
+              {WEBMCP_TOOL_CATALOG.map((tool) => {
+                const lastCall = recentCalls.find((call) => call.name === tool.name);
+                return (
+                  <article className="tool-inventory-card" key={tool.name}>
+                    <div className="tool-card-heading">
+                      <span className={`tool-access tool-access-${tool.access}`}>{tool.access}</span>
+                      <span className="tool-call-state">{lastCall ? `${lastCall.status} · ${new Date(lastCall.timestamp).toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' })}` : 'Not called yet'}</span>
+                    </div>
+                    <h3>{tool.title}</h3>
+                    <code>{tool.name}</code>
+                    <p>{tool.description}</p>
+                  </article>
+                );
+              })}
+            </div>
+
+            <footer className="tool-inventory-footer">
+              <span><StatusDot tone={webmcp.status === 'ready' ? 'ready' : 'warning'} /> Read tools never mutate. Write tools create visible draft versions.</span>
+              <button className="text-button" type="button" onClick={copyPrompt}>{copied ? 'Prompt copied' : 'Copy canonical agent prompt'} <span aria-hidden="true">→</span></button>
             </footer>
           </section>
         </div>

@@ -153,6 +153,8 @@ button:focus-visible, a:focus-visible {
 .chevron { color: var(--muted); font-size: 18px; }
 .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .tool-status { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 11px; font-weight: 660; }
+.tool-status-button { padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; white-space: nowrap; }
+.tool-status-button:hover { border-color: var(--line); background: var(--surface); }
 
 .status-dot { display: inline-block; flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; }
 .status-dot-ready { background: #45a67b; box-shadow: 0 0 0 4px rgba(69, 166, 123, 0.13); }
@@ -692,11 +694,42 @@ button:focus-visible, a:focus-visible {
 .inspector-footer > span { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 8px; font-weight: 720; }
 .inspector-footer small { color: var(--muted); font-size: 7px; text-align: right; }
 
+.tool-inventory-backdrop { z-index: 70; }
+.tool-inventory-drawer {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(760px, 96vw);
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--line-strong);
+  background: var(--paper);
+  box-shadow: -25px 0 60px rgba(30, 44, 38, 0.16);
+}
+.tool-inventory-status { display: flex; align-items: center; gap: 12px; margin: 16px 22px 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255, 254, 250, 0.86); }
+.tool-inventory-status > div { display: grid; gap: 3px; }
+.tool-inventory-status strong { font-size: 10px; }
+.tool-inventory-status small { color: var(--muted); font-size: 8px; line-height: 1.45; }
+.tool-inventory-orb { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 6px var(--amber-soft); }
+.tool-inventory-orb-ready { background: var(--green); box-shadow: 0 0 0 6px var(--green-soft); }
+.tool-inventory-orb-failed { background: var(--coral); box-shadow: 0 0 0 6px var(--coral-soft); }
+.tool-inventory-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; overflow-y: auto; padding: 16px 22px 22px; }
+.tool-inventory-card { display: grid; align-content: start; gap: 6px; min-height: 172px; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); box-shadow: 0 5px 15px rgba(34, 52, 45, 0.035); }
+.tool-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tool-access { padding: 4px 7px; border-radius: 999px; font-size: 6px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.tool-access-read { background: var(--blue-soft); color: var(--blue); }
+.tool-access-write { background: var(--teal-soft); color: var(--teal-dark); }
+.tool-call-state { color: var(--muted); font-size: 6px; text-transform: capitalize; }
+.tool-inventory-card h3 { margin: 3px 0 0; font-size: 12px; letter-spacing: -0.025em; }
+.tool-inventory-card code { width: max-content; max-width: 100%; overflow-wrap: anywhere; color: var(--teal-dark); font-size: 7px; font-weight: 700; }
+.tool-inventory-card p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.tool-inventory-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 22px; border-top: 1px solid var(--line); background: #f8f8f4; }
+.tool-inventory-footer > span { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: 8px; font-weight: 700; }
+
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: minmax(240px, 0.7fr) minmax(520px, 1.5fr); }
   .right-rail { grid-column: 1 / -1; grid-template-columns: 0.9fr 1.1fr 1.2fr; }
   .canvas-panel { min-height: 700px; }
-  .tool-status { display: none; }
+  .tool-status { font-size: 9px; }
 }
 
 @media (max-width: 840px) {
@@ -715,6 +748,7 @@ button:focus-visible, a:focus-visible {
 @media (max-width: 600px) {
   .topbar { min-height: 64px; padding: 10px 14px; }
   .brand-copy small, .button-ghost { display: none; }
+  .tool-status { width: 38px; min-height: 34px; justify-content: center; overflow: hidden; padding: 0; font-size: 0; }
   .workspace { min-height: calc(100vh - 64px); padding: 8px; }
   .left-rail, .right-rail { grid-template-columns: 1fr; }
   .activity-panel { grid-column: auto; }
@@ -744,6 +778,11 @@ button:focus-visible, a:focus-visible {
   .inspector-footer { display: grid; gap: 5px; padding: 11px 14px; }
   .inspector-footer small { text-align: left; }
   .graph-selection { bottom: 10px; left: 10px; width: calc(100% - 20px); }
+  .tool-inventory-drawer { width: 100vw; }
+  .tool-inventory-status { margin: 12px 14px 0; }
+  .tool-inventory-list { grid-template-columns: 1fr; padding: 12px 14px 18px; }
+  .tool-inventory-card { min-height: auto; }
+  .tool-inventory-footer { display: grid; gap: 8px; padding: 11px 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
