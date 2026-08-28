@@ -92,7 +92,7 @@ WebMCP tool handlers ─┘                                              ├─�
                                                                     └── activity trail
 ```
 
-- `app/` — responsive canvas, graph fallback table, inspector, demo controls, and metadata
+- `app/` — responsive canvas, graph fallback table, inspector, demo controls, metadata, and the production design-system layer
 - `data/` — deterministic fictional Career Night seed
 - `domain/` — shared types, invariants, scoring, and validation
 - `services/` — transactional planning, disruption, consent, and publication operations
@@ -144,6 +144,7 @@ The repository runs the same gates in GitHub Actions. The automated suite covers
 ## Project documents
 
 - [MASTER_PLAN.md](MASTER_PLAN.md) — product thesis, scope, release gates, and completion status
+- [DESIGN.md](DESIGN.md) — visual direction, layout rules, typography, color, motion, and responsive behavior
 - [WEBMCP.md](WEBMCP.md) — complete tool implementation and testing guide
 - [DEMO_SCRIPT.md](DEMO_SCRIPT.md) — narrated under-three-minute storyboard
 - [SUBMISSION_COPY.md](SUBMISSION_COPY.md) — Devpost-ready description

@@ -332,7 +332,7 @@ export default function Home() {
         </a>
 
         <div className="scenario-switcher" aria-label="Current scenario">
-          <span className="scenario-icon" aria-hidden="true">◎</span>
+          <span className="scenario-icon" aria-hidden="true">CN</span>
           <span>
             <small>Demo workspace</small>
             <strong>Career Night</strong>
@@ -355,7 +355,7 @@ export default function Home() {
                     : 'Restoring local demo'}
           </button>
           <button className="button button-ghost" type="button" onClick={reset}>Reset demo</button>
-          <button className="avatar-button" type="button" aria-label="Open coordinator profile">RM</button>
+          <span className="avatar-button" aria-label="Demo coordinator RM">RM</span>
         </div>
       </header>
 
@@ -501,7 +501,7 @@ export default function Home() {
             )}
 
             <div className="agent-presence" role="status">
-              <span className="agent-spark" aria-hidden="true">✦</span>
+              <span className="agent-spark" aria-hidden="true">M</span>
               <span><strong>{published ? 'Accepted plan is immutable' : 'Shared state is version-safe'}</strong><small>{published ? `Published v${plan.version} · ${plan.publishedAt ? new Date(plan.publishedAt).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Human actions and nine site tools use one plan model'}</small></span>
             </div>
 
@@ -532,7 +532,7 @@ export default function Home() {
           </div>
 
           <div className="agent-prompt">
-            <span className="prompt-icon" aria-hidden="true">✦</span>
+            <span className="prompt-icon" aria-hidden="true">M</span>
             <div>
               <span className="eyebrow">Canonical agent prompt</span>
               <p>“{agentPrompt}”</p>
