@@ -1,11 +1,20 @@
 import { calculatePlanSummary } from '@/domain/scoring';
 import type { DomainError, MutationResult, ScenarioState } from '@/domain/types';
 import { validatePlan } from '@/domain/validation';
+import type {
+  CommitmentRequestResult,
+  PublishCoordinationPlanInput,
+  RequestCommitmentsInput,
+} from '@/services/commitmentService';
 import type { DraftCoordinationPlanInput, ReviseCoordinationPlanInput } from '@/services/coordinationService';
+import type { PreviewDisruptionInput } from '@/services/disruptionService';
 import {
   draftCoordinationPlanInputSchema,
   emptyInputSchema,
   inspectPlanInputSchema,
+  previewDisruptionInputSchema,
+  publishCoordinationPlanInputSchema,
+  requestCommitmentsInputSchema,
   reviseCoordinationPlanInputSchema,
   searchContributionsInputSchema,
   validatePlanInputSchema,
@@ -17,7 +26,10 @@ export type WebMCPToolName =
   | 'inspect_plan'
   | 'validate_plan'
   | 'draft_coordination_plan'
-  | 'revise_coordination_plan';
+  | 'revise_coordination_plan'
+  | 'preview_disruption'
+  | 'request_commitments'
+  | 'publish_coordination_plan';
 
 export type ToolExecutionEvent = {
   name: WebMCPToolName;
@@ -29,6 +41,9 @@ type HandlerDependencies = {
   getScenario: () => ScenarioState;
   replaceDraft: (input: DraftCoordinationPlanInput) => MutationResult;
   reviseDraft: (input: ReviseCoordinationPlanInput) => MutationResult;
+  previewDisruption: (input: PreviewDisruptionInput) => MutationResult;
+  requestCommitments: (input: RequestCommitmentsInput) => CommitmentRequestResult;
+  publishPlan: (input: PublishCoordinationPlanInput) => MutationResult;
   onExecuted?: (event: ToolExecutionEvent) => void;
 };
 
@@ -125,6 +140,7 @@ function planView(state: ScenarioState) {
     commitments: state.commitments.filter((item) => item.planId === state.plan.id && item.planVersion === state.plan.version),
     summary,
     lastChange: state.activity[0] ?? null,
+    disruptionPreview: state.disruptionPreview ?? null,
   };
 }
 
@@ -148,6 +164,7 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
         ok: true,
         data: {
           workspace: { name: 'Mutual Mesh demo', schemaVersion: state.schemaVersion },
+          demoMode: true,
           goal: state.goal,
           constraints: state.constraints,
           activePlan: { id: state.plan.id, title: state.plan.title, version: state.plan.version, status: state.plan.status },
@@ -276,6 +293,60 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
           appliedOperations: parsed.data.operations.length,
           plan: planView(result.scenario),
           message: `Revision committed as draft version ${result.scenario.plan.version}. No participant was contacted and nothing was published.`,
+        },
+      });
+    },
+
+    previewDisruption(input: unknown) {
+      const parsed = previewDisruptionInputSchema.safeParse(input ?? {});
+      if (!parsed.success) return report('preview_disruption', invalidInput(parsed.error));
+      const result = dependencies.previewDisruption({ ...parsed.data, actor: 'agent' });
+      if (!result.ok) return report('preview_disruption', domainFailure(result.error));
+      return report('preview_disruption', {
+        ok: true,
+        data: {
+          visibleChange: true,
+          canonicalPlanChanged: false,
+          preview: result.scenario.disruptionPreview,
+          message: 'A temporary impact overlay is visible. The canonical plan and its version are unchanged.',
+        },
+      });
+    },
+
+    requestCommitments(input: unknown) {
+      const parsed = requestCommitmentsInputSchema.safeParse(input ?? {});
+      if (!parsed.success) return report('request_commitments', invalidInput(parsed.error));
+      const result = dependencies.requestCommitments({ ...parsed.data, actor: 'agent' });
+      if (!result.ok) return report('request_commitments', domainFailure(result.error));
+      return report('request_commitments', {
+        ok: true,
+        data: {
+          visibleChange: true,
+          inAppOnly: true,
+          requestedParticipantIds: result.requestedParticipantIds,
+          skippedParticipants: result.skippedParticipants,
+          plan: planView(result.scenario),
+          requiredNextStep: 'Wait for or simulate participant responses. Publish only after every required commitment is accepted.',
+          message: 'Commitment requests exist only inside this fictional demo. No email, SMS, calendar invitation, or external message was sent.',
+        },
+      });
+    },
+
+    publishCoordinationPlan(input: unknown) {
+      const parsed = publishCoordinationPlanInputSchema.safeParse(input ?? {});
+      if (!parsed.success) return report('publish_coordination_plan', invalidInput(parsed.error));
+      const result = dependencies.publishPlan({ ...parsed.data, actor: 'agent' });
+      if (!result.ok) return report('publish_coordination_plan', domainFailure(result.error));
+      return report('publish_coordination_plan', {
+        ok: true,
+        data: {
+          visibleChange: true,
+          publicationStatus: result.scenario.plan.status,
+          immutableVersion: result.scenario.plan.version,
+          publishedAt: result.scenario.plan.publishedAt,
+          summary: calculatePlanSummary(result.scenario),
+          externalCommunication: false,
+          message: 'The accepted plan is now an immutable in-app publication. No external message was sent.',
         },
       });
     },

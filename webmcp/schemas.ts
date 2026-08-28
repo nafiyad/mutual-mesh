@@ -64,6 +64,29 @@ export const reviseCoordinationPlanInputSchema = z.strictObject({
   rationale: z.string().trim().min(1).max(300),
 });
 
+export const previewDisruptionInputSchema = z.strictObject({
+  planId: taskId,
+  expectedVersion: z.number().int().positive(),
+  type: z.enum(['contribution_unavailable', 'participant_unavailable', 'task_time_shift', 'capacity_reduction']),
+  targetId: taskId,
+  replacementValue: z.union([z.string().trim().min(1).max(120), z.number().nonnegative()]).optional(),
+  replacementEndsAt: isoDateTime.optional(),
+});
+
+export const requestCommitmentsInputSchema = z.strictObject({
+  planId: taskId,
+  expectedVersion: z.number().int().positive(),
+  participantIds: z.array(taskId).min(1).max(25),
+  message: z.string().trim().min(1).max(240),
+  inAppOnly: z.literal(true),
+});
+
+export const publishCoordinationPlanInputSchema = z.strictObject({
+  planId: taskId,
+  expectedVersion: z.number().int().positive(),
+  acknowledgement: z.literal('Publish the accepted plan'),
+});
+
 const closedObject = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: 'object',
   properties,
@@ -135,6 +158,32 @@ export const reviseCoordinationPlanInputJsonSchema = closedObject({
   rationale: { type: 'string', minLength: 1, maxLength: 300 },
 }, ['planId', 'expectedVersion', 'operations', 'rationale']);
 
+export const previewDisruptionInputJsonSchema = closedObject({
+  planId: { type: 'string', minLength: 1, maxLength: 120 },
+  expectedVersion: positiveInteger,
+  type: { type: 'string', enum: ['contribution_unavailable', 'participant_unavailable', 'task_time_shift', 'capacity_reduction'] },
+  targetId: { type: 'string', minLength: 1, maxLength: 120 },
+  replacementValue: { oneOf: [{ type: 'string', minLength: 1, maxLength: 120 }, { type: 'number', minimum: 0 }] },
+  replacementEndsAt: isoString,
+}, ['planId', 'expectedVersion', 'type', 'targetId']);
+
+export const requestCommitmentsInputJsonSchema = closedObject({
+  planId: { type: 'string', minLength: 1, maxLength: 120 },
+  expectedVersion: positiveInteger,
+  participantIds: { type: 'array', minItems: 1, maxItems: 25, items: { type: 'string', minLength: 1, maxLength: 120 } },
+  message: { type: 'string', minLength: 1, maxLength: 240 },
+  inAppOnly: { type: 'boolean', const: true },
+}, ['planId', 'expectedVersion', 'participantIds', 'message', 'inAppOnly']);
+
+export const publishCoordinationPlanInputJsonSchema = closedObject({
+  planId: { type: 'string', minLength: 1, maxLength: 120 },
+  expectedVersion: positiveInteger,
+  acknowledgement: { type: 'string', const: 'Publish the accepted plan' },
+}, ['planId', 'expectedVersion', 'acknowledgement']);
+
 export type SearchContributionsInput = z.infer<typeof searchContributionsInputSchema>;
 export type DraftCoordinationPlanToolInput = z.infer<typeof draftCoordinationPlanInputSchema>;
 export type ReviseCoordinationPlanToolInput = z.infer<typeof reviseCoordinationPlanInputSchema>;
+export type PreviewDisruptionToolInput = z.infer<typeof previewDisruptionInputSchema>;
+export type RequestCommitmentsToolInput = z.infer<typeof requestCommitmentsInputSchema>;
+export type PublishCoordinationPlanToolInput = z.infer<typeof publishCoordinationPlanInputSchema>;

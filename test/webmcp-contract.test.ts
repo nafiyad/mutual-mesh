@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createSeedScenario } from '@/data/seedScenario';
 import type { MutationResult, ScenarioState } from '@/domain/types';
+import { publishCoordinationPlan, requestPlanCommitments, simulateCommitmentResponses } from '@/services/commitmentService';
 import {
   replaceDraftCoordinationPlan,
   reviseDraftCoordinationPlan,
   type DraftCoordinationPlanInput,
   type ReviseCoordinationPlanInput,
 } from '@/services/coordinationService';
+import { previewPlanDisruption } from '@/services/disruptionService';
 import type { WebMCPModelContext, WebMCPTool } from '@/webmcp/modelContext';
 import { createRegisteredTools, registerMutualMeshTools } from '@/webmcp/registerTools';
 import { createToolHandlers, type WebMCPToolName } from '@/webmcp/toolHandlers';
@@ -32,6 +34,7 @@ type InspectedTask = {
   capacityRequired?: number;
   contributionIds: string[];
   dependencyTaskIds: string[];
+  contributions?: Array<{ id: string; participantId: string } | null>;
 };
 
 function successData<T>(value: unknown): T {
@@ -51,6 +54,13 @@ function createAgentHarness() {
     getScenario: () => structuredClone(liveScenario),
     replaceDraft: (input: DraftCoordinationPlanInput) => apply(replaceDraftCoordinationPlan(liveScenario, input)),
     reviseDraft: (input: ReviseCoordinationPlanInput) => apply(reviseDraftCoordinationPlan(liveScenario, input)),
+    previewDisruption: (input) => apply(previewPlanDisruption(liveScenario, input)),
+    requestCommitments: (input) => {
+      const result = requestPlanCommitments(liveScenario, input);
+      if (result.ok) liveScenario = result.scenario;
+      return result;
+    },
+    publishPlan: (input) => apply(publishCoordinationPlan(liveScenario, input)),
   });
   const context = new MockModelContext();
   const invoke = async (name: WebMCPToolName, input: unknown) => {
@@ -58,11 +68,20 @@ function createAgentHarness() {
     if (!tool) throw new Error(`Tool ${name} is not registered.`);
     return Promise.resolve(tool.execute(input, { signal: new AbortController().signal }));
   };
-  return { context, handlers, invoke };
+  const simulateAllAccepted = () => {
+    const pending = liveScenario.commitments.filter((item) => item.planVersion === liveScenario.plan.version && item.status === 'pending');
+    return apply(simulateCommitmentResponses(liveScenario, {
+      planId: liveScenario.plan.id,
+      expectedVersion: liveScenario.plan.version,
+      responses: pending.map((item) => ({ participantId: item.participantId, status: 'accepted' })),
+      actor: 'system',
+    }));
+  };
+  return { context, handlers, invoke, simulateAllAccepted };
 }
 
 describe('WebMCP contract', () => {
-  it('publishes six strict, clearly annotated tools and unregisters them on abort', async () => {
+  it('publishes nine strict, clearly annotated tools and unregisters them on abort', async () => {
     const { context, handlers } = createAgentHarness();
     const controller = new AbortController();
     const names = await registerMutualMeshTools(context, handlers, controller.signal);
@@ -74,8 +93,11 @@ describe('WebMCP contract', () => {
       'validate_plan',
       'draft_coordination_plan',
       'revise_coordination_plan',
+      'preview_disruption',
+      'request_commitments',
+      'publish_coordination_plan',
     ]);
-    expect(context.tools.size).toBe(6);
+    expect(context.tools.size).toBe(9);
     for (const tool of context.tools.values()) {
       expect(tool.inputSchema).toMatchObject({ type: 'object', additionalProperties: false });
     }
@@ -88,7 +110,7 @@ describe('WebMCP contract', () => {
   });
 
   it('lets a mocked agent inspect, search, draft, revise, and validate without store access', async () => {
-    const { context, handlers, invoke } = createAgentHarness();
+    const { context, handlers, invoke, simulateAllAccepted } = createAgentHarness();
     await registerMutualMeshTools(context, handlers);
 
     const contextData = successData<{ activePlan: { id: string; version: number }; openGaps: Array<{ requiredCapability: string }> }>(
@@ -144,6 +166,66 @@ describe('WebMCP contract', () => {
       await invoke('validate_plan', { planId: inspected.id, expectedVersion: revised.plan.version }),
     );
     expect(validated).toMatchObject({ readyForCommitmentRequests: true, readyToPublish: false, blockingCount: 0 });
+
+    const disruption = successData<{ canonicalPlanChanged: boolean; preview: { planVersion: number; affectedTaskIds: string[]; candidateAlternativeContributionIds: string[] } }>(
+      await invoke('preview_disruption', {
+        planId: inspected.id,
+        expectedVersion: revised.plan.version,
+        type: 'contribution_unavailable',
+        targetId: 'contribution-projector',
+      }),
+    );
+    expect(disruption).toMatchObject({
+      canonicalPlanChanged: false,
+      preview: {
+        planVersion: 5,
+        affectedTaskIds: expect.arrayContaining([expect.stringContaining('task-av')]),
+        candidateAlternativeContributionIds: ['contribution-backup-display'],
+      },
+    });
+
+    const liveAfterPreview = successData<{ version: number; tasks: InspectedTask[] }>(await invoke('inspect_plan', {}));
+    const avTask = liveAfterPreview.tasks.find((task) => task.key === 'av');
+    if (!avTask) throw new Error('AV task missing after preview.');
+    expect(avTask.contributionIds).toEqual(['contribution-projector']);
+    const repaired = successData<{ plan: { version: number; tasks: InspectedTask[] } }>(
+      await invoke('revise_coordination_plan', {
+        planId: inspected.id,
+        expectedVersion: liveAfterPreview.version,
+        operations: [
+          { type: 'unassign', taskId: avTask.id, contributionId: 'contribution-projector' },
+          { type: 'assign', taskId: avTask.id, contributionId: 'contribution-backup-display' },
+        ],
+        rationale: 'Replace the unavailable projector with Priya’s backup display and adapter while preserving the pickup dependency.',
+      }),
+    );
+    expect(repaired.plan).toMatchObject({ version: 6, tasks: expect.arrayContaining([expect.objectContaining({ key: 'av', contributionIds: ['contribution-backup-display'] })]) });
+
+    const assignedParticipantIds = [...new Set(repaired.plan.tasks.flatMap((task) => task.contributionIds.map((id) => {
+      const contribution = task.contributions?.find((item) => item?.id === id);
+      return contribution?.participantId;
+    })).filter((id): id is string => Boolean(id)))];
+    const requested = successData<{ requestedParticipantIds: string[]; inAppOnly: boolean; plan: { status: string } }>(
+      await invoke('request_commitments', {
+        planId: inspected.id,
+        expectedVersion: repaired.plan.version,
+        participantIds: assignedParticipantIds,
+        message: 'Please confirm this fictional in-app assignment.',
+        inAppOnly: true,
+      }),
+    );
+    expect(requested).toMatchObject({ inAppOnly: true, plan: { status: 'requesting' } });
+    expect(requested.requestedParticipantIds.length).toBeGreaterThan(0);
+
+    expect(simulateAllAccepted().ok).toBe(true);
+    const published = successData<{ publicationStatus: string; immutableVersion: number; externalCommunication: boolean }>(
+      await invoke('publish_coordination_plan', {
+        planId: inspected.id,
+        expectedVersion: repaired.plan.version,
+        acknowledgement: 'Publish the accepted plan',
+      }),
+    );
+    expect(published).toMatchObject({ publicationStatus: 'published', immutableVersion: 6, externalCommunication: false });
   });
 
   it('returns stable recovery errors for unknown fields and stale revisions', async () => {

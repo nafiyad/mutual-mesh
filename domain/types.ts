@@ -94,6 +94,22 @@ export type ActivityEvent = {
   changedEntityIds: string[];
 };
 
+export type DisruptionPreview = {
+  token: string;
+  planId: string;
+  planVersion: number;
+  type: 'contribution_unavailable' | 'participant_unavailable' | 'task_time_shift' | 'capacity_reduction';
+  targetId: string;
+  summary: string;
+  affectedTaskIds: string[];
+  brokenDependencyTaskIds: string[];
+  newGapTaskIds: string[];
+  candidateAlternativeContributionIds: string[];
+  riskBefore: 'Low' | 'Medium' | 'High';
+  riskAfter: 'Low' | 'Medium' | 'High';
+  createdAt: string;
+};
+
 export type ScenarioState = {
   schemaVersion: 1;
   goal: Goal;
@@ -103,6 +119,7 @@ export type ScenarioState = {
   plan: CoordinationPlan;
   commitments: Commitment[];
   activity: ActivityEvent[];
+  disruptionPreview?: DisruptionPreview;
 };
 
 export type DomainError = {

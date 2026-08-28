@@ -9,7 +9,7 @@ import { useMutualMeshStore } from '@/store/useMutualMeshStore';
 import { WEBMCP_TOOL_CATALOG } from '@/webmcp/registerTools';
 import { useWebMCPRegistration } from '@/webmcp/useWebMCPRegistration';
 
-const agentPrompt = 'Inspect the live coordination context, search for an available equipment-transport contribution, revise only the current plan version to close the gap, then validate it. Keep every locked constraint and do not contact participants or publish.';
+const agentPrompt = 'Inspect the live coordination context, close the equipment-transport gap, then preview Maya’s projector becoming unavailable. Repair the draft with the backup display, preserve every locked constraint, and validate the current version. Do not request commitments or publish yet.';
 const tones = ['teal', 'amber', 'blue'] as const;
 type ContributionFilter = 'all' | 'skills' | 'resources' | 'logistics';
 type InspectorTab = 'overview' | 'validation' | 'history';
@@ -95,9 +95,14 @@ export default function Home() {
   const plan = useMutualMeshStore((state) => state.plan);
   const commitments = useMutualMeshStore((state) => state.commitments);
   const activity = useMutualMeshStore((state) => state.activity);
+  const disruptionPreview = useMutualMeshStore((state) => state.disruptionPreview);
   const hasHydrated = useMutualMeshStore((state) => state.hasHydrated);
   const resetDemo = useMutualMeshStore((state) => state.resetDemo);
   const assignContribution = useMutualMeshStore((state) => state.assignContribution);
+  const previewDisruption = useMutualMeshStore((state) => state.previewDisruption);
+  const requestCommitments = useMutualMeshStore((state) => state.requestCommitments);
+  const simulateResponses = useMutualMeshStore((state) => state.simulateResponses);
+  const publishPlan = useMutualMeshStore((state) => state.publishPlan);
   const { registration: webmcp, recentCalls } = useWebMCPRegistration(hasHydrated);
 
   const [showMoreContributions, setShowMoreContributions] = useState(false);
@@ -139,7 +144,8 @@ export default function Home() {
     plan,
     commitments,
     activity,
-  }), [activity, commitments, constraints, contributions, goal, participants, plan]);
+    disruptionPreview,
+  }), [activity, commitments, constraints, contributions, disruptionPreview, goal, participants, plan]);
 
   const summary = useMemo(() => calculatePlanSummary(scenario), [scenario]);
   const validation = useMemo(() => validatePlan(scenario), [scenario]);
@@ -165,6 +171,10 @@ export default function Home() {
   const visibleContributions = filteredContributions.slice(0, showMoreContributions || searchQuery ? 8 : 3);
   const transportTask = taskByKey(plan.tasks, 'transport');
   const transportOpen = transportTask?.status === 'gap';
+  const currentCommitments = commitments.filter((item) => item.planId === plan.id && item.planVersion === plan.version);
+  const pendingCommitments = currentCommitments.filter((item) => item.status === 'pending');
+  const acceptedCommitments = currentCommitments.filter((item) => item.status === 'accepted');
+  const declinedCommitments = currentCommitments.filter((item) => item.status === 'declined');
 
   const reset = () => {
     resetDemo();
@@ -208,6 +218,75 @@ export default function Home() {
     setActionMessage(`${result.error.message} ${result.error.recoveryHint}`);
   };
 
+  const previewProjectorDisruption = () => {
+    const result = previewDisruption({
+      planId: plan.id,
+      expectedVersion: plan.version,
+      type: 'contribution_unavailable',
+      targetId: 'contribution-projector',
+      actor: 'human',
+    });
+    setActionMessage(result.ok
+      ? 'Projector cancellation previewed. The canonical plan is unchanged.'
+      : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const applyBackupDisplayRepair = () => {
+    const result = assignContribution('task-av', 'contribution-backup-display', plan.version);
+    setValidatedVersion(null);
+    setActionMessage(result.ok
+      ? `Backup display and adapter assigned. Draft advanced to version ${result.scenario.plan.version}.`
+      : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const requestAllCommitments = () => {
+    const contributionOwners = new Map(contributions.map((item) => [item.id, item.participantId]));
+    const participantIds = [...new Set(plan.tasks.flatMap((task) => task.contributionIds.map((id) => contributionOwners.get(id))).filter((id): id is string => Boolean(id)))];
+    const result = requestCommitments({
+      planId: plan.id,
+      expectedVersion: plan.version,
+      participantIds,
+      message: 'Please confirm your fictional Career Night assignment in this Mutual Mesh demo.',
+      inAppOnly: true,
+      actor: 'human',
+    });
+    setActionMessage(result.ok
+      ? `${result.requestedParticipantIds.length} in-app commitments requested. No external messages were sent.`
+      : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const simulateAllAccepted = () => {
+    const result = simulateResponses({
+      planId: plan.id,
+      expectedVersion: plan.version,
+      responses: pendingCommitments.map((item) => ({ participantId: item.participantId, status: 'accepted' as const })),
+      actor: 'system',
+    });
+    setActionMessage(result.ok ? 'All fictional participants accepted. Publication is now unlocked.' : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const simulateOneDecline = () => {
+    const declining = pendingCommitments[0];
+    if (!declining) return;
+    const result = simulateResponses({
+      planId: plan.id,
+      expectedVersion: plan.version,
+      responses: pendingCommitments.map((item) => ({ participantId: item.participantId, status: item.participantId === declining.participantId ? 'declined' as const : 'accepted' as const })),
+      actor: 'system',
+    });
+    setActionMessage(result.ok ? 'One fictional participant declined. Publication is correctly blocked.' : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const publishAcceptedPlan = () => {
+    const result = publishPlan({
+      planId: plan.id,
+      expectedVersion: plan.version,
+      acknowledgement: 'Publish the accepted plan',
+      actor: 'human',
+    });
+    setActionMessage(result.ok ? `Plan v${result.scenario.plan.version} published as an immutable in-app snapshot.` : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
   const openInspector = (tab: InspectorTab) => {
     setToolInventoryOpen(false);
     setInspectorTab(tab);
@@ -237,6 +316,9 @@ export default function Home() {
     .map((contribution) => contribution ? participantMap.get(contribution.participantId)?.displayName : undefined)
     .filter((name): name is string => Boolean(name))
     .join(', ') || 'Unassigned';
+  const avContribution = contributions.find((contribution) => av.contributionIds.includes(contribution.id));
+  const usingBackupDisplay = av.contributionIds.includes('contribution-backup-display');
+  const published = plan.status === 'published';
 
   return (
     <main className="app-shell">
@@ -269,7 +351,7 @@ export default function Home() {
             {webmcp.status === 'ready' ? `WebMCP ready · ${webmcp.registeredTools.length} tools`
               : webmcp.status === 'unavailable' ? 'WebMCP unavailable · UI active'
                 : webmcp.status === 'failed' ? 'WebMCP registration needs attention'
-                  : webmcp.status === 'registering' ? 'Registering 6 WebMCP tools'
+                  : webmcp.status === 'registering' ? `Registering ${WEBMCP_TOOL_CATALOG.length} WebMCP tools`
                     : 'Restoring local demo'}
           </button>
           <button className="button button-ghost" type="button" onClick={reset}>Reset demo</button>
@@ -284,7 +366,7 @@ export default function Home() {
           <section className="panel goal-panel">
             <div className="panel-heading">
               <span className="eyebrow">Active goal</span>
-              <span className="version-pill">Draft v{plan.version}</span>
+              <span className="version-pill">{plan.status === 'draft' ? 'Draft' : plan.status === 'requesting' ? 'Requesting' : plan.status === 'ready' ? 'Accepted' : 'Published'} v{plan.version}</span>
             </div>
             <h1>{goal.title}</h1>
             <p className="goal-summary">{goal.description}</p>
@@ -388,7 +470,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className={`mesh-stage ${fitMode ? 'mesh-stage-fit' : ''} ${transportOpen ? '' : 'mesh-stage-complete'}`}>
+          <div className={`mesh-stage mesh-stage-${plan.status} ${fitMode ? 'mesh-stage-fit' : ''} ${transportOpen ? '' : 'mesh-stage-complete'} ${disruptionPreview ? 'mesh-stage-disrupted' : ''}`}>
             <div className="mesh-grid" aria-hidden="true" />
             <div className="mesh-line line-a" aria-hidden="true" />
             <div className="mesh-line line-b" aria-hidden="true" />
@@ -397,13 +479,13 @@ export default function Home() {
             <div className="mesh-line line-e" aria-hidden="true" />
             <div className="mesh-line line-f" aria-hidden="true" />
 
-            <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status={`${summary.readiness}% ready`} selected={selectedGraphNode?.title === 'Career Night'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Goal', title: 'Career Night', meta: goal.description, status: `${summary.readiness}% ready` })} />
+            <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status={published ? 'published' : `${summary.readiness}% ready`} selected={selectedGraphNode?.title === 'Career Night'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Goal', title: 'Career Night', meta: goal.description, status: published ? 'published' : `${summary.readiness}% ready` })} />
             <MeshNode className="node-venue" eyebrow="Task" title={venue.label} meta="Accessible · 60 seats" status="covered" selected={selectedGraphNode?.title === venue.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: venue.label, meta: `Assigned to ${ownersForTask(venue)} · step-free capacity for 60`, status: venue.status })} />
             <MeshNode className="node-speakers" eyebrow="Task" title="Speakers" meta="2 of 2 matched" status="covered" selected={selectedGraphNode?.title === 'Speakers'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task group', title: 'Speakers', meta: 'Aisha leads interview practice; Dev runs the resume clinic.', status: '2 of 2 covered' })} />
-            <MeshNode className="node-av" eyebrow="Task" title={av.label} meta="Projector + adapter" status={transportOpen ? 'review' : 'covered'} selected={selectedGraphNode?.title === av.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: av.label, meta: `Assigned to ${ownersForTask(av)} · depends on equipment pickup`, status: transportOpen ? 'dependency gap' : 'covered' })} />
+            <MeshNode className="node-av" eyebrow="Task" title={av.label} meta={avContribution?.label ?? 'Display needed'} status={disruptionPreview?.affectedTaskIds.includes(av.id) ? 'at risk' : published ? 'complete' : av.status} selected={selectedGraphNode?.title === av.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: av.label, meta: `Assigned to ${ownersForTask(av)} · depends on equipment pickup`, status: disruptionPreview?.affectedTaskIds.includes(av.id) ? 'disruption preview' : av.status })} />
             <MeshNode className="node-refreshments" eyebrow="Task" title={refreshments.label} meta="$120 · 50 snack packs" status="covered" selected={selectedGraphNode?.title === refreshments.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: refreshments.label, meta: `Assigned to ${ownersForTask(refreshments)} · nut-free packs with ingredient labels`, status: refreshments.status })} />
             <MeshNode className="node-jordan" eyebrow="Contributor" title="Jordan" meta="Community room" status="suggested" selected={selectedGraphNode?.title === 'Jordan'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Contributor', title: 'Jordan', meta: 'Offers the step-free Riverside Community Hub for 60 people.', status: 'available' })} />
-            <MeshNode className="node-maya" eyebrow="Contributor" title="Maya" meta="Projector" status="suggested" selected={selectedGraphNode?.title === 'Maya'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Contributor', title: 'Maya', meta: 'Offers a projector, HDMI adapter, cable, and power lead.', status: 'available' })} />
+            <MeshNode className="node-maya" eyebrow="Contributor" title={ownersForTask(av)} meta={usingBackupDisplay ? 'Backup display + adapter' : 'Projector'} status={disruptionPreview ? 'preview unavailable' : published ? 'committed' : av.status} selected={selectedGraphNode?.title === ownersForTask(av)} onSelect={() => setSelectedGraphNode({ eyebrow: 'Contributor', title: ownersForTask(av), meta: avContribution?.description ?? 'Presentation equipment contribution.', status: disruptionPreview ? 'preview unavailable' : av.status })} />
             {transportOpen ? (
               <article className="mesh-gap node-gap">
                 <span aria-hidden="true">+</span>
@@ -420,8 +502,23 @@ export default function Home() {
 
             <div className="agent-presence" role="status">
               <span className="agent-spark" aria-hidden="true">✦</span>
-              <span><strong>Shared state is version-safe</strong><small>UI actions and future tools use one plan model</small></span>
+              <span><strong>{published ? 'Accepted plan is immutable' : 'Shared state is version-safe'}</strong><small>{published ? `Published v${plan.version} · ${plan.publishedAt ? new Date(plan.publishedAt).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Human actions and nine site tools use one plan model'}</small></span>
             </div>
+
+            {disruptionPreview ? (
+              <aside className="disruption-overlay" role="status" aria-live="polite">
+                <span className="preview-label">Temporary preview · plan unchanged</span>
+                <strong>{disruptionPreview.summary}</strong>
+                <p>{disruptionPreview.candidateAlternativeContributionIds.length} viable replacement found · risk {disruptionPreview.riskBefore} → {disruptionPreview.riskAfter}</p>
+              </aside>
+            ) : null}
+
+            {published ? (
+              <aside className="published-overlay" role="status">
+                <span aria-hidden="true">✓</span>
+                <div><strong>Plan v{plan.version} published</strong><small>Every hard check and required commitment passed.</small></div>
+              </aside>
+            ) : null}
 
             {selectedGraphNode ? (
               <aside className="graph-selection" aria-live="polite">
@@ -477,19 +574,19 @@ export default function Home() {
               <div><small>Budget</small><strong>${summary.budgetSpent} / ${goal.budgetLimit}</strong></div>
               <div><small>Coverage</small><strong>{summary.coveredTasks} / {summary.totalTasks} tasks</strong></div>
               <div><small>Commitments</small><strong>{summary.commitmentRequests} requested</strong></div>
-              <div><small>Risk</small><strong className={summary.risk === 'Medium' ? 'risk-medium' : 'risk-low'}><StatusDot tone={summary.risk === 'Medium' ? 'warning' : 'ready'} /> {summary.risk}</strong></div>
+              <div><small>Risk</small><strong className={`risk-${summary.risk.toLowerCase()}`}><StatusDot tone={summary.risk === 'Low' ? 'ready' : 'warning'} /> {summary.risk}</strong></div>
             </div>
             <button className="button button-inspector" type="button" onClick={() => openInspector('overview')}>
               Open plan inspector <span aria-hidden="true">→</span>
             </button>
           </section>
 
-          <section className={`gap-card ${transportOpen ? '' : 'gap-card-resolved'}`}>
-            <div className="gap-icon" aria-hidden="true">{transportOpen ? '!' : '✓'}</div>
+          <section className={`gap-card workflow-card ${transportOpen || disruptionPreview ? '' : 'gap-card-resolved'} ${published ? 'workflow-card-published' : ''}`}>
+            <div className="gap-icon" aria-hidden="true">{transportOpen || disruptionPreview ? '!' : published ? '◆' : '✓'}</div>
             <div>
-              <span className="eyebrow">{transportOpen ? 'Needs attention' : 'Foundation mutation complete'}</span>
-              <h2>{transportOpen ? 'Equipment pickup has no owner' : 'Equipment pickup is covered'}</h2>
-              <p>{transportOpen ? 'The projector must arrive before setup begins at 5:30 PM.' : 'Carlos is suggested without changing any locked constraint.'}</p>
+              <span className="eyebrow">{transportOpen ? 'Step 1 · Close the gap' : disruptionPreview ? 'Step 2 · Repair reality' : plan.status === 'requesting' ? declinedCommitments.length ? 'Step 4 · Consent declined' : 'Step 4 · Consent pending' : plan.status === 'ready' ? 'Step 5 · Human publish gate' : published ? 'Canonical end-to-end story complete' : usingBackupDisplay ? 'Step 3 · Request consent' : 'Step 2 · Stress-test the plan'}</span>
+              <h2>{transportOpen ? 'Equipment pickup has no owner' : disruptionPreview ? 'Projector cancellation affects Presentation AV' : plan.status === 'requesting' ? declinedCommitments.length ? 'A fictional participant declined' : `${pendingCommitments.length} fictional responses pending` : plan.status === 'ready' ? 'Every required commitment is accepted' : published ? `Plan v${plan.version} is immutable` : usingBackupDisplay ? 'The repaired plan is valid' : 'What if Maya’s projector disappears?'}</h2>
+              <p>{transportOpen ? 'The display must arrive before setup begins at 5:30 PM.' : disruptionPreview ? 'The preview is visible, but the canonical plan has not changed.' : plan.status === 'requesting' ? declinedCommitments.length ? 'Publication stays locked. Revise the assignment in a new draft or reset this deterministic demo.' : 'These requests exist only inside this demo. No external messages were sent.' : plan.status === 'ready' ? 'Publication changes only the in-app plan state and preserves this accepted version.' : published ? 'The complete activity trail proves the draft, disruption, consent, and publication sequence.' : usingBackupDisplay ? 'The backup display and adapter preserve budget, timing, accessibility, workload, and pickup dependencies.' : 'Preview the impact before any assignment changes.'}</p>
               {transportOpen ? (
                 <>
                   <button
@@ -519,8 +616,25 @@ export default function Home() {
                     </div>
                   ) : null}
                 </>
+              ) : disruptionPreview ? (
+                <button className="button button-primary" type="button" onClick={applyBackupDisplayRepair}>Repair with backup display</button>
+              ) : plan.status === 'requesting' ? (
+                declinedCommitments.length ? (
+                  <button className="text-button" type="button" onClick={reset}>Reset and replay acceptance path <span aria-hidden="true">→</span></button>
+                ) : (
+                  <div className="workflow-actions">
+                    <button className="button button-primary" type="button" onClick={simulateAllAccepted}>Simulate all accept</button>
+                    <button className="text-button" type="button" onClick={simulateOneDecline}>Simulate one decline</button>
+                  </div>
+                )
+              ) : plan.status === 'ready' ? (
+                <button className="button button-primary" type="button" onClick={publishAcceptedPlan}>Publish accepted plan</button>
+              ) : published ? (
+                <button className="text-button" type="button" onClick={reset}>Reset and replay the story <span aria-hidden="true">→</span></button>
+              ) : usingBackupDisplay ? (
+                <button className="button button-primary" type="button" onClick={requestAllCommitments}>Request in-app commitments</button>
               ) : (
-                <button className="text-button" type="button" onClick={reset}>Reset and test again <span aria-hidden="true">→</span></button>
+                <button className="button button-primary" type="button" onClick={previewProjectorDisruption}>Preview projector cancellation</button>
               )}
             </div>
           </section>
@@ -533,7 +647,7 @@ export default function Home() {
             <ol className="activity-list">
               {activity.slice(0, 4).map((item) => (
                 <li key={item.id}>
-                  <span className={`activity-dot activity-${item.actor === 'agent' ? 'agent' : 'human'}`} aria-hidden="true" />
+                  <span className={`activity-dot activity-${item.actor}`} aria-hidden="true" />
                   <span><strong>{item.actor === 'human' ? 'You' : item.actor === 'agent' ? 'Agent' : 'System'}</strong><small>{item.action}</small></span>
                   <time>v{item.planVersionAfter ?? plan.version}</time>
                 </li>
@@ -544,6 +658,10 @@ export default function Home() {
         </aside>
       </section>
 
+      <footer className="prototype-note">
+        Mutual Mesh is a fictional coordination prototype, not an emergency-response or real-world messaging service.
+      </footer>
+
       {inspectorOpen ? (
         <div className="inspector-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.currentTarget === event.target) setInspectorOpen(false);
@@ -551,7 +669,7 @@ export default function Home() {
           <section className="inspector-drawer" role="dialog" aria-modal="true" aria-labelledby="inspector-title">
             <header className="inspector-header">
               <div>
-                <span className="eyebrow">Plan inspector · Draft v{plan.version}</span>
+                <span className="eyebrow">Plan inspector · {plan.status} v{plan.version}</span>
                 <h2 id="inspector-title">Career Night coordination plan</h2>
                 <p>Inspect the reasoning, run every validation check, and review exactly what changed.</p>
               </div>
@@ -590,6 +708,14 @@ export default function Home() {
                     <h3>Use community capacity first</h3>
                     <p>{plan.rationale}</p>
                   </section>
+                  <section className="inspector-section consent-section">
+                    <div className="inspector-section-heading"><div><span className="eyebrow">Consent is state</span><h3>{currentCommitments.length ? `${acceptedCommitments.length} of ${currentCommitments.length} accepted` : 'No commitments requested'}</h3></div><span className="version-pill">{plan.status}</span></div>
+                    <ul className="commitment-list">
+                      {currentCommitments.length ? currentCommitments.map((commitment) => (
+                        <li key={commitment.id}><strong>{participantMap.get(commitment.participantId)?.displayName ?? commitment.participantId}</strong><span className={`commitment-state commitment-${commitment.status}`}>{commitment.status}</span></li>
+                      )) : <li><small>Suggestions are not commitments. Requests begin only after validation.</small></li>}
+                    </ul>
+                  </section>
                   <section className="inspector-section">
                     <div className="inspector-section-heading"><div><span className="eyebrow">Human authority</span><h3>Locked constraints</h3></div><span className="version-pill">{constraints.length} protected</span></div>
                     <ul className="inspector-constraint-list">
@@ -607,7 +733,7 @@ export default function Home() {
                     <div>
                       <span className="eyebrow">{validatedVersion === plan.version ? `Validated against v${plan.version}` : 'Validation available'}</span>
                       <h3>{validation.blockingCount ? `${validation.blockingCount} blocker must be resolved` : 'Every hard constraint passes'}</h3>
-                      <p>{validation.blockingCount ? 'Resolve the open capability gap, then validate this version again.' : 'This draft is ready for the commitment-request phase. It is not publishable yet.'}</p>
+                      <p>{validation.blockingCount ? 'Resolve the listed issue, then validate this version again.' : published ? 'This immutable version passed every validation and consent gate.' : validation.readyToPublish ? 'Every validation and consent gate passes. Publication is available.' : 'This draft is ready for in-app commitment requests.'}</p>
                     </div>
                     <button className="button button-primary" type="button" onClick={runValidation}>{validatedVersion === plan.version ? 'Run again' : 'Run validation'}</button>
                   </section>
@@ -663,8 +789,8 @@ export default function Home() {
             </div>
 
             <footer className="inspector-footer">
-              <span><StatusDot tone={validation.blockingCount ? 'warning' : 'ready'} /> {validation.blockingCount ? 'Human workflow has one blocker' : 'Human-interface phase exit gate passed'}</span>
-              <small>{validation.blockingCount ? 'Preview and apply the Carlos revision.' : 'Next phase: request participant commitments through WebMCP.'}</small>
+              <span><StatusDot tone={validation.blockingCount ? 'warning' : 'ready'} /> {published ? 'Canonical end-to-end story complete' : validation.blockingCount ? `${validation.blockingCount} blocker needs attention` : validation.readyToPublish ? 'Publication gate unlocked' : 'Hard constraints pass'}</span>
+              <small>{published ? 'Reset the deterministic demo to replay.' : validation.readyToPublish ? 'Publish the exact accepted version when ready.' : 'Commitment and publication actions remain separate.'}</small>
             </footer>
           </section>
         </div>
@@ -678,8 +804,8 @@ export default function Home() {
             <header className="inspector-header">
               <div>
                 <span className="eyebrow">Agent interface · imperative WebMCP</span>
-                <h2 id="tool-inventory-title">Six tools share this live workspace</h2>
-                <p>Agents inspect the same state you see. Draft writes are transactional, version-safe, and never contact participants or publish.</p>
+                <h2 id="tool-inventory-title">Nine tools share this live workspace</h2>
+                <p>Agents inspect the same state you see. Draft, preview, consent, and publication remain separate, version-safe actions.</p>
               </div>
               <button className="inspector-close" type="button" onClick={() => setToolInventoryOpen(false)} aria-label="Close WebMCP tool inventory" autoFocus>×</button>
             </header>
@@ -712,7 +838,7 @@ export default function Home() {
             </div>
 
             <footer className="tool-inventory-footer">
-              <span><StatusDot tone={webmcp.status === 'ready' ? 'ready' : 'warning'} /> Read tools never mutate. Write tools create visible draft versions.</span>
+              <span><StatusDot tone={webmcp.status === 'ready' ? 'ready' : 'warning'} /> Four reads · five visible preview or write actions.</span>
               <button className="text-button" type="button" onClick={copyPrompt}>{copied ? 'Prompt copied' : 'Copy canonical agent prompt'} <span aria-hidden="true">→</span></button>
             </footer>
           </section>

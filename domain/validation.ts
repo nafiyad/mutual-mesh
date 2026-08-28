@@ -124,7 +124,6 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
     });
   }
 
-  const blockingCount = issues.filter((issue) => issue.severity === 'error').length;
   const assignedParticipantIds = new Set(
     state.plan.tasks
       .flatMap((task) => task.contributionIds)
@@ -133,13 +132,27 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
   );
   const acceptedParticipantIds = new Set(
     state.commitments
-      .filter((commitment) => commitment.planVersion === state.plan.version && commitment.status === 'accepted')
+      .filter((commitment) => commitment.planId === state.plan.id && commitment.planVersion === state.plan.version && commitment.status === 'accepted')
       .map((commitment) => commitment.participantId),
   );
   const allCommitmentsAccepted = assignedParticipantIds.size > 0
     && [...assignedParticipantIds].every((id) => acceptedParticipantIds.has(id));
+  const declinedCommitments = state.commitments.filter(
+    (commitment) => commitment.planId === state.plan.id && commitment.planVersion === state.plan.version && commitment.status === 'declined',
+  );
 
-  if (blockingCount === 0 && !allCommitmentsAccepted) {
+  if (declinedCommitments.length) {
+    issues.push({
+      code: 'COMMITMENT_DECLINED',
+      severity: 'error',
+      message: `${declinedCommitments.length} required participant${declinedCommitments.length === 1 ? ' has' : 's have'} declined this plan version.`,
+      affectedEntityIds: [state.plan.id, ...declinedCommitments.map((item) => item.participantId)],
+      recoveryHint: 'Revise the affected assignments, validate the new version, and request commitments again.',
+    });
+  }
+
+  const hasStructuralBlocker = issues.some((issue) => issue.severity === 'error');
+  if (!hasStructuralBlocker && !allCommitmentsAccepted) {
     issues.push({
       code: 'COMMITMENTS_NOT_REQUESTED',
       severity: 'warning',
@@ -160,6 +173,7 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
   }
 
   const warningCount = issues.filter((issue) => issue.severity === 'warning').length;
+  const blockingCount = issues.filter((issue) => issue.severity === 'error').length;
   const hasIssue = (codes: string[]) => issues.some((issue) => codes.includes(issue.code));
   const statusFor = (codes: string[]) => {
     const matching = issues.filter((issue) => codes.includes(issue.code));
@@ -184,7 +198,7 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
       { key: 'workload', label: 'Workload', status: statusFor(['WORKLOAD_EXCEEDED']), detail: 'No participant exceeds two assignments.' },
       { key: 'budget', label: 'Budget', status: statusFor(['BUDGET_EXCEEDED']), detail: `$${summary.budgetSpent} of $${state.goal.budgetLimit} allocated.` },
       { key: 'coverage', label: 'Required capabilities', status: statusFor(['MISSING_REQUIRED_CAPABILITY']), detail: `${summary.coveredTasks} of ${summary.totalTasks} tasks covered.` },
-      { key: 'consent', label: 'Consent & publication', status: statusFor(['COMMITMENTS_NOT_REQUESTED', 'PLAN_NOT_PUBLISHED']), detail: allCommitmentsAccepted ? 'All required commitments are accepted.' : 'Commitment requests belong to the next phase.' },
+      { key: 'consent', label: 'Consent & publication', status: statusFor(['COMMITMENT_DECLINED', 'COMMITMENTS_NOT_REQUESTED', 'PLAN_NOT_PUBLISHED']), detail: allCommitmentsAccepted ? 'All required commitments are accepted.' : declinedCommitments.length ? 'A declined commitment requires a new draft version.' : 'In-app commitments must be accepted before publication.' },
     ],
   };
 }

@@ -162,6 +162,8 @@ export function replaceDraftCoordinationPlan(
     updatedAt: new Date().toISOString(),
     publishedAt: undefined,
   };
+  next.goal.status = 'drafted';
+  next.disruptionPreview = undefined;
   next.activity.unshift({
     id: `activity-agent-draft-v${next.plan.version}`,
     actor: 'agent',
@@ -249,6 +251,10 @@ export function reviseDraftCoordinationPlan(
     }
   }
 
+  next.plan.tasks.forEach((task) => {
+    task.status = task.contributionIds.length ? 'suggested' : 'gap';
+  });
+  next.disruptionPreview = undefined;
   const invalid = validateCandidate(next);
   if (invalid) return invalid;
 
@@ -256,6 +262,7 @@ export function reviseDraftCoordinationPlan(
   next.plan.version += 1;
   next.plan.rationale = input.rationale;
   next.plan.status = 'draft';
+  next.goal.status = 'drafted';
   next.plan.updatedAt = new Date().toISOString();
   next.activity.unshift({
     id: `activity-agent-revise-v${next.plan.version}`,
@@ -287,6 +294,9 @@ export function assignContributionToTask(
       },
     };
   }
+  if (current.plan.status === 'published') {
+    return failure('PUBLISHED_PLAN_IMMUTABLE', 'Published plans cannot be revised.', 'Reset the demo or start a new draft workflow.');
+  }
 
   const task = current.plan.tasks.find((item) => item.id === input.taskId);
   if (!task) {
@@ -310,7 +320,10 @@ export function assignContributionToTask(
   nextTask.contributionIds = [input.contributionId];
   nextTask.status = 'suggested';
   next.plan.version += 1;
+  next.plan.status = 'draft';
+  next.goal.status = 'drafted';
   next.plan.updatedAt = new Date().toISOString();
+  next.disruptionPreview = undefined;
   next.activity.unshift({
     id: `activity-assign-${next.plan.version}-${input.taskId}`,
     actor: input.actor ?? 'human',

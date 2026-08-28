@@ -1,71 +1,121 @@
 # Mutual Mesh WebMCP implementation
 
-Mutual Mesh exposes a structured agent interface over the same live coordination state used by the human UI. The browser receives six imperative tools from the top-level page only after the persisted demo has hydrated, so an agent never reads a stale seed while the interface shows restored state.
+Mutual Mesh exposes nine imperative site tools over the same live coordination state used by the human interface. The top-level page registers them only after device-local state has hydrated, preventing an agent from reading seed data while the UI shows restored data.
 
-## Tool inventory
+## Tool contract
 
-| Tool | Access | Purpose |
-| --- | --- | --- |
-| `get_coordination_context` | Read | Return the active goal, locked constraints, plan summary, open gaps, commitments, and safe next operations. |
-| `search_contributions` | Read | Search by capability text, kind, time window, availability, capacity, cost, and accessibility tags; rejected candidates include exact reasons. |
-| `inspect_plan` | Read | Return the current versioned task graph, assignments, gaps, costs, commitments, rationale, and last change. |
-| `validate_plan` | Read | Run the same deterministic integrity, timing, capacity, accessibility, workload, budget, dependency, consent, and publication checks as the UI. |
-| `draft_coordination_plan` | Write | Replace the unpublished draft with 1–12 bounded tasks. `draftOnly` must be `true`. |
-| `revise_coordination_plan` | Write | Apply 1–10 assign, unassign, task, time, or dependency operations as one version-safe transaction. |
+| Tool | Annotation | Input guard | Effect |
+| --- | --- | --- | --- |
+| `get_coordination_context` | Read-only | Empty closed object | Goal, constraints, summary, gaps, commitments, and next safe operations. |
+| `search_contributions` | Read-only | Bounded filters and result limit | Viable matches plus exact rejection reasons. |
+| `inspect_plan` | Read-only | Optional current plan ID/version | Complete current task graph and disruption overlay. |
+| `validate_plan` | Read-only | Exact plan ID/version | Deterministic checks, errors, warnings, and recovery actions. |
+| `draft_coordination_plan` | Mutating | `draftOnly: true`, 1–12 tasks | Atomically replaces the unpublished draft and increments its version. |
+| `revise_coordination_plan` | Mutating | Exact version, 1–10 operations | Atomically assigns, unassigns, adds/removes tasks, changes time, or changes dependencies. |
+| `preview_disruption` | Visible preview | Exact version and one bounded disruption | Adds a temporary impact overlay and activity event; canonical version stays unchanged. |
+| `request_commitments` | Mutating | Exact valid version, assigned participants, `inAppOnly: true` | Creates pending fictional commitments with no external effect. |
+| `publish_coordination_plan` | Mutating | Exact accepted version and literal acknowledgement | Publishes an immutable in-app snapshot; no external effect. |
 
-The implementation uses the imperative API directly:
+The browser registration loop is in [`webmcp/registerTools.ts`](webmcp/registerTools.ts):
 
 ```ts
 await document.modelContext.registerTool({
   name: 'search_contributions',
   description: 'Find viable people and resources using bounded filters.',
-  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  inputSchema: {
+    type: 'object',
+    properties: { capabilityQuery: { type: 'string' } },
+    additionalProperties: false,
+  },
   annotations: { readOnlyHint: true },
   execute: async (input) => handlers.searchContributions(input),
 });
 ```
 
-The production registry builds the full definitions in [`webmcp/registerTools.ts`](webmcp/registerTools.ts). Every JSON Schema is closed with `additionalProperties: false`, and every `execute` handler independently re-validates its input with Zod.
+The production implementation creates all nine definitions from one catalog. Every JSON Schema is closed with `additionalProperties: false`, and every execution handler independently validates the input with the matching Zod schema.
 
 ## Registration lifecycle
 
-1. The normal React interface renders and restores device-local state.
+1. React renders the normal interface and restores local state.
 2. The client feature-detects `document.modelContext?.registerTool`.
-3. A shared registration prevents duplicate names during React development remounts.
-4. All tools register with one `AbortSignal`; page cleanup aborts and unregisters them.
-5. Tool handlers read the current Zustand snapshot at execution time, not a captured render.
-6. Unsupported browsers retain the complete human workflow and show an honest fallback status.
+3. A shared registration record prevents duplicate names during development remounts.
+4. The nine tools register with one `AbortSignal`.
+5. Handlers read the current Zustand snapshot at call time rather than a captured render.
+6. Cleanup aborts and unregisters the tools.
+7. Unsupported browsers retain the complete human workflow and show an honest fallback status.
 
-## Safety and control boundaries
+## State and safety model
 
-- Read tools are annotated with `readOnlyHint: true`; the two mutation tools are explicitly marked as writes.
-- Every write is draft-only. These tools cannot contact a participant, request a commitment, accept on someone’s behalf, or publish a plan.
-- `revise_coordination_plan` requires both a plan ID and the exact inspected version. Stale calls return `STALE_PLAN_VERSION` with the live version and recovery instructions.
-- Operations apply to a clone and commit only after all structural, assignment, timing, workload, and dependency invariants pass.
-- Unknown IDs, capability mismatches, unavailable offers, time conflicts, invalid dependencies, duplicate task keys, and published-plan edits return stable machine-readable errors.
-- Successful writes visibly advance the plan version and add an agent-attributed activity event.
-- All outputs are plain JSON-safe values with `{ ok, data }` or `{ ok, error }` envelopes.
+- The UI and WebMCP adapters call the same domain services.
+- Read calls never mutate state.
+- Draft/revision calls operate on a clone and commit only when every structural and assignment invariant passes.
+- Every write requires the exact current version; `STALE_PLAN_VERSION` returns the live version and a recovery hint.
+- A disruption preview visibly records the hypothetical change while keeping the canonical plan and version unchanged.
+- A contribution being suggested, requested, accepted, declined, complete, and published are distinct states.
+- A decline is a blocking validation error. It cannot be overwritten by publication; the assignment must be revised in a new draft version.
+- Publication requires every hard validation and every assigned participant acceptance, plus the exact acknowledgement `Publish the accepted plan`.
+- Published plans reject later draft or revision calls.
+- Commitment requests and publication exist only in this fictional app. They send no email, SMS, calendar invitation, API call, or other external message.
 
-## Test in a compatible browser
+Tool responses use stable JSON-safe envelopes:
 
-1. Deploy the site over HTTPS.
-2. Open the live URL directly in ChatGPT’s in-app browser, or enable `chrome://flags/#enable-webmcp-testing` in Chrome 149+ and restart Chrome.
-3. Select the WebMCP status badge in Mutual Mesh. It should say **WebMCP ready · 6 tools**.
-4. Open the tool inventory and confirm four read tools and two write tools.
-5. Give the agent this prompt:
+```ts
+type ToolResult<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        recoveryHint: string;
+        currentVersion?: number;
+        details?: Array<{ path: string; message: string }>;
+      };
+    };
+```
 
-> Inspect the live coordination context, search for an available equipment-transport contribution, revise only the current plan version to close the gap, then validate it. Keep every locked constraint and do not contact participants or publish.
+## Agent acceptance path
 
-6. Confirm the visible result: Carlos covers equipment pickup, readiness reaches 100%, the plan advances from v3 to v4, and the activity history records an agent revision.
-7. Call `validate_plan` with an old version to confirm a recoverable stale-version error.
-8. Reload or reset the demo to repeat the deterministic path.
+1. Call `get_coordination_context`.
+2. Call `inspect_plan` for current v3.
+3. Call `search_contributions` for `equipment-transport`.
+4. Call `revise_coordination_plan` against v3 to assign Carlos; the plan becomes v4.
+5. Call `preview_disruption` against v4 for `contribution-projector`; the overlay appears and the plan remains v4.
+6. Call `search_contributions` for `presentation-av` and select the portable display.
+7. Call `revise_coordination_plan` against v4; the repaired plan becomes v5.
+8. Call `validate_plan` against v5 and confirm zero blockers.
+9. Call `request_commitments` with assigned participant IDs and `inAppOnly: true`.
+10. In the deterministic demo, use the visible UI control to simulate responses.
+11. Call `validate_plan` again, then `publish_coordination_plan` with the literal acknowledgement.
 
-## Automated contract test
+The visible graph, readiness metrics, commitment states, tool-call inventory, and activity history provide evidence after every stage.
 
-Run:
+## Automated proof
+
+`test/webmcp-contract.test.ts` installs a mock `ModelContext`, captures all registered definitions, and acts only through their published schemas and `execute` functions. It verifies:
+
+- nine unique tools and correct read/write annotations;
+- strict top-level schemas and handler re-validation;
+- discovery through the full inspect, search, revise, preview, repair, request, and publish path;
+- stale-version and unknown-field rejection;
+- visible plan changes and immutable publication; and
+- abort-driven unregistration.
+
+Additional service and UI tests cover the simulated-decline branch and the complete fallback flow. Run all automated checks with:
 
 ```bash
 npm test
+npm run test:e2e
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
 
-`test/webmcp-contract.test.ts` provides a mock `ModelContext`, captures registered tools, and acts only through their published schemas and `execute` functions. It proves that an agent can inspect, search, draft, revise, and validate without direct access to the application store. It also verifies read/write annotations, strict top-level schemas, stable error codes, and abort-driven unregistration.
+## Test in a compatible browser
+
+1. Open the live HTTPS URL directly in ChatGPT's in-app browser or a WebMCP-enabled Chrome build.
+2. Reset the deterministic demo.
+3. Open the WebMCP badge and confirm **nine tools** and **four reads · five visible preview or write actions**.
+4. Run the canonical prompt from [README.md](README.md).
+5. Confirm each site-tool call is reflected in the canvas and recent-call state.
+6. Reset and repeat; no account or API key is required.

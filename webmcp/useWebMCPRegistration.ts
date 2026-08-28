@@ -29,6 +29,9 @@ function createSharedRegistration(context: WebMCPModelContext): SharedRegistrati
     getScenario: () => scenarioFromStore(useMutualMeshStore.getState()),
     replaceDraft: (input) => useMutualMeshStore.getState().replaceDraft(input),
     reviseDraft: (input) => useMutualMeshStore.getState().reviseDraft(input),
+    previewDisruption: (input) => useMutualMeshStore.getState().previewDisruption(input),
+    requestCommitments: (input) => useMutualMeshStore.getState().requestCommitments(input),
+    publishPlan: (input) => useMutualMeshStore.getState().publishPlan(input),
     onExecuted: (event) => executionListeners.forEach((listener) => listener(event)),
   });
   return {

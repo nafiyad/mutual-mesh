@@ -3,6 +3,9 @@ import {
   draftCoordinationPlanInputJsonSchema,
   emptyInputJsonSchema,
   inspectPlanInputJsonSchema,
+  previewDisruptionInputJsonSchema,
+  publishCoordinationPlanInputJsonSchema,
+  requestCommitmentsInputJsonSchema,
   reviseCoordinationPlanInputJsonSchema,
   searchContributionsInputJsonSchema,
   validatePlanInputJsonSchema,
@@ -23,6 +26,9 @@ export const WEBMCP_TOOL_CATALOG: ToolCatalogEntry[] = [
   { name: 'validate_plan', title: 'Validate plan', description: 'Run the same deterministic constraints, coverage, budget, workload, dependency, and consent checks used by the UI.', access: 'read' },
   { name: 'draft_coordination_plan', title: 'Draft coordination plan', description: 'Replace the unpublished draft with a complete bounded task proposal. This never contacts participants or publishes.', access: 'write' },
   { name: 'revise_coordination_plan', title: 'Revise coordination plan', description: 'Apply up to ten version-safe operations as one transactional draft revision. This never contacts participants or publishes.', access: 'write' },
+  { name: 'preview_disruption', title: 'Preview disruption', description: 'Show the visible impact of an unavailable contribution, unavailable participant, time shift, or capacity reduction without changing the canonical plan.', access: 'write' },
+  { name: 'request_commitments', title: 'Request commitments', description: 'Create simulated in-app commitment requests for assigned participants on a validated plan. This sends no external messages.', access: 'write' },
+  { name: 'publish_coordination_plan', title: 'Publish coordination plan', description: 'Publish the exact accepted plan version as an immutable in-app snapshot after every validation and consent gate passes.', access: 'write' },
 ];
 
 export function createRegisteredTools(handlers: MutualMeshToolHandlers): WebMCPTool[] {
@@ -62,6 +68,24 @@ export function createRegisteredTools(handlers: MutualMeshToolHandlers): WebMCPT
       inputSchema: reviseCoordinationPlanInputJsonSchema,
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       execute: (input) => handlers.reviseCoordinationPlan(input),
+    },
+    {
+      ...WEBMCP_TOOL_CATALOG[6],
+      inputSchema: previewDisruptionInputJsonSchema,
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      execute: (input) => handlers.previewDisruption(input),
+    },
+    {
+      ...WEBMCP_TOOL_CATALOG[7],
+      inputSchema: requestCommitmentsInputJsonSchema,
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      execute: (input) => handlers.requestCommitments(input),
+    },
+    {
+      ...WEBMCP_TOOL_CATALOG[8],
+      inputSchema: publishCoordinationPlanInputJsonSchema,
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      execute: (input) => handlers.publishCoordinationPlan(input),
     },
   ];
 }
