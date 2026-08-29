@@ -472,12 +472,33 @@ export default function Home() {
 
           <div className={`mesh-stage mesh-stage-${plan.status} ${fitMode ? 'mesh-stage-fit' : ''} ${transportOpen ? '' : 'mesh-stage-complete'} ${disruptionPreview ? 'mesh-stage-disrupted' : ''}`}>
             <div className="mesh-grid" aria-hidden="true" />
-            <div className="mesh-line line-a" aria-hidden="true" />
-            <div className="mesh-line line-b" aria-hidden="true" />
-            <div className="mesh-line line-c" aria-hidden="true" />
-            <div className="mesh-line line-d" aria-hidden="true" />
-            <div className="mesh-line line-e" aria-hidden="true" />
-            <div className="mesh-line line-f" aria-hidden="true" />
+            <svg className="mesh-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <marker id="mesh-arrow-suggested" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 8 4 L 0 8 z" />
+                </marker>
+                <marker id="mesh-arrow-committed" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 8 4 L 0 8 z" />
+                </marker>
+                <marker id="mesh-arrow-warning" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 8 4 L 0 8 z" />
+                </marker>
+              </defs>
+
+              <path className="mesh-edge mesh-edge-plan mesh-edge-trunk" d="M 50 25 V 29 M 14 29 H 86" />
+              <path className="mesh-edge mesh-edge-plan" d="M 14 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
+              <path className="mesh-edge mesh-edge-plan" d="M 38 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
+              <path className="mesh-edge mesh-edge-plan" d="M 62 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
+              <path className="mesh-edge mesh-edge-plan" d="M 86 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
+
+              <path className="mesh-edge mesh-edge-assignment" d="M 14 48 V 68" markerEnd="url(#mesh-arrow-committed)" />
+              <path className="mesh-edge mesh-edge-assignment" d="M 86 48 V 68" markerEnd="url(#mesh-arrow-committed)" />
+              <path
+                className={`mesh-edge ${transportOpen ? 'mesh-edge-warning' : 'mesh-edge-assignment'}`}
+                d="M 86 48 V 57 H 62 V 68"
+                markerEnd={transportOpen ? 'url(#mesh-arrow-warning)' : 'url(#mesh-arrow-committed)'}
+              />
+            </svg>
 
             <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status={published ? 'published' : `${summary.readiness}% ready`} selected={selectedGraphNode?.title === 'Career Night'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Goal', title: 'Career Night', meta: goal.description, status: published ? 'published' : `${summary.readiness}% ready` })} />
             <MeshNode className="node-venue" eyebrow="Task" title={venue.label} meta="Accessible · 60 seats" status="covered" selected={selectedGraphNode?.title === venue.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: venue.label, meta: `Assigned to ${ownersForTask(venue)} · step-free capacity for 60`, status: venue.status })} />

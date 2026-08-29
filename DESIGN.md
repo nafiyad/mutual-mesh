@@ -33,6 +33,7 @@ No purple, neon blue, multicolor node taxonomy, decorative gradients, or outer g
 - **Secondary action:** Paper Highlight with a Hairline Stone border. No pill-shaped primary buttons.
 - **Cards:** Use elevation only for the dark goal brief, central graph, and active workflow. Supporting panels rely on borders and negative space.
 - **Graph nodes:** Chalk surfaces on Graphite Ink, 16px radius, strong labels, quiet metadata, and one status marker. All node families share the same visual language.
+- **Graph connectors:** Use an orthogonal top-down hierarchy with explicit arrowheads and centered node anchors. Dashed edges communicate proposed plan flow; solid Civic Green edges communicate assignments or satisfied dependencies. Connectors never cross, terminate in empty space, or rely on arbitrary diagonal angles.
 - **Inputs:** 44px minimum height, label or accessible name, Civic Green focus ring, no floating label.
 - **State:** Status copy and geometry accompany color. Error uses Muted Clay only where behavior is blocked.
 - **Drawers:** Full-height editorial sheets with large headings, readable 13–15px detail, and clear section rhythm.
@@ -45,6 +46,7 @@ No purple, neon blue, multicolor node taxonomy, decorative gradients, or outer g
 - Side panels use vertical rhythm, not a pile of equally styled cards.
 - Below 1180px, move operational status into a horizontal row beneath the graph.
 - Below 820px, collapse to a single column with the graph first, then goal, workflow, contributions, and history.
+- Below 600px, replace spatial connectors with a clean ordered node grid; never compress a desktop graph until lines or cards overlap.
 - No horizontal scrolling; touch targets remain at least 44px.
 
 ## 6. Motion & Interaction

@@ -471,9 +471,6 @@ button:focus-visible, a:focus-visible {
 .mesh-gap > span { display: grid; grid-row: span 2; width: 27px; height: 27px; place-items: center; align-self: center; border-radius: 9px; background: var(--coral-soft); color: var(--coral); font-size: 17px; }
 .mesh-gap-resolved { border-color: rgba(63, 128, 98, 0.58); background: rgba(226, 240, 232, 0.84); }
 .mesh-gap-resolved > span { background: var(--green); color: white; font-size: 11px; }
-.mesh-stage-complete .line-f { background: var(--green); }
-.mesh-stage-requesting .mesh-line { height: 2px; background: repeating-linear-gradient(90deg, var(--amber) 0 7px, transparent 7px 12px); opacity: 0.72; }
-.mesh-stage-ready .mesh-line, .mesh-stage-published .mesh-line { height: 2px; background: var(--green); opacity: 0.72; }
 .mesh-stage-disrupted .node-av, .mesh-stage-disrupted .node-maya { border-color: var(--coral); box-shadow: 0 0 0 5px rgba(189, 97, 72, 0.12), var(--shadow-tight); }
 
 .disruption-overlay {
@@ -514,14 +511,6 @@ button:focus-visible, a:focus-visible {
 .published-overlay > div { display: grid; gap: 3px; }
 .published-overlay strong { font-size: 10px; }
 .published-overlay small { color: var(--green); font-size: 7px; }
-
-.mesh-line { position: absolute; z-index: 1; height: 1px; background: repeating-linear-gradient(90deg, var(--amber), var(--amber) 5px, transparent 5px, transparent 9px); transform-origin: left center; }
-.line-a { top: 25%; left: 48%; width: 35%; transform: rotate(31deg); }
-.line-b { top: 25%; left: 52%; width: 34%; transform: rotate(149deg); }
-.line-c { top: 25%; left: 50%; width: 19%; transform: rotate(90deg); }
-.line-d { top: 43%; left: 20%; width: 32%; transform: rotate(61deg); background: var(--green); }
-.line-e { top: 43%; right: 20%; width: 32%; transform: rotate(119deg); background: var(--green); }
-.line-f { top: 49%; left: 50%; width: 20%; transform: rotate(90deg); background: var(--green); }
 
 .agent-presence {
   position: absolute;
