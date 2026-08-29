@@ -1,11 +1,7 @@
 import { calculatePlanSummary } from '@/domain/scoring';
 import type { DomainError, MutationResult, ScenarioState } from '@/domain/types';
 import { validatePlan } from '@/domain/validation';
-import type {
-  CommitmentRequestResult,
-  PublishCoordinationPlanInput,
-  RequestCommitmentsInput,
-} from '@/services/commitmentService';
+import type { PublishCoordinationPlanInput, RequestCommitmentsInput } from '@/services/commitmentService';
 import type { DraftCoordinationPlanInput, ReviseCoordinationPlanInput } from '@/services/coordinationService';
 import type { PreviewDisruptionInput } from '@/services/disruptionService';
 import {
@@ -42,8 +38,8 @@ type HandlerDependencies = {
   replaceDraft: (input: DraftCoordinationPlanInput) => MutationResult;
   reviseDraft: (input: ReviseCoordinationPlanInput) => MutationResult;
   previewDisruption: (input: PreviewDisruptionInput) => MutationResult;
-  requestCommitments: (input: RequestCommitmentsInput) => CommitmentRequestResult;
-  publishPlan: (input: PublishCoordinationPlanInput) => MutationResult;
+  stageCommitments: (input: RequestCommitmentsInput) => MutationResult;
+  stagePublication: (input: PublishCoordinationPlanInput) => MutationResult;
   onExecuted?: (event: ToolExecutionEvent) => void;
 };
 
@@ -107,7 +103,6 @@ function contributionView(state: ScenarioState, contributionId: string) {
     kind: contribution.kind,
     capability: contribution.capability,
     label: contribution.label,
-    description: contribution.description,
     capacity: contribution.capacity ?? null,
     cost: contribution.cost,
     availableFrom: contribution.availableFrom,
@@ -119,7 +114,24 @@ function contributionView(state: ScenarioState, contributionId: string) {
   };
 }
 
-function planView(state: ScenarioState) {
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function mutationPlanView(state: ScenarioState) {
+  const summary = calculatePlanSummary(state);
+  return {
+    id: state.plan.id,
+    version: state.plan.version,
+    status: state.plan.status,
+    summary,
+    gaps: state.plan.tasks
+      .filter((task) => task.status === 'gap' || task.contributionIds.length === 0)
+      .map((task) => ({ id: task.id, label: task.label, requiredCapability: task.requiredCapability })),
+  };
+}
+
+function planView(state: ScenarioState, taskOffset = 0, taskLimit = 2) {
   const summary = calculatePlanSummary(state);
   const gaps = state.plan.tasks
     .filter((task) => task.status === 'gap' || task.contributionIds.length === 0)
@@ -132,15 +144,42 @@ function planView(state: ScenarioState) {
     status: state.plan.status,
     rationale: state.plan.rationale,
     updatedAt: state.plan.updatedAt,
-    tasks: state.plan.tasks.map((task) => ({
-      ...task,
-      contributions: task.contributionIds.map((id) => contributionView(state, id)).filter(Boolean),
+    tasks: state.plan.tasks.slice(taskOffset, taskOffset + taskLimit).map((task) => ({
+      id: task.id,
+      key: task.key,
+      label: task.label,
+      requiredCapability: task.requiredCapability,
+      startsAt: task.startsAt,
+      endsAt: task.endsAt,
+      ...(task.capacityRequired ? { capacityRequired: task.capacityRequired } : {}),
+      contributionIds: task.contributionIds,
+      dependencyTaskIds: task.dependencyTaskIds,
+      status: task.status,
+      contributions: task.contributionIds.map((id) => {
+        const contribution = state.contributions.find((item) => item.id === id);
+        return contribution ? { id: contribution.id, participantId: contribution.participantId, label: contribution.label } : null;
+      }).filter(Boolean),
     })),
+    taskPage: {
+      offset: taskOffset,
+      returned: Math.min(taskLimit, Math.max(0, state.plan.tasks.length - taskOffset)),
+      total: state.plan.tasks.length,
+      hasMore: taskOffset + taskLimit < state.plan.tasks.length,
+      nextOffset: taskOffset + taskLimit < state.plan.tasks.length ? taskOffset + taskLimit : null,
+    },
     gaps,
-    commitments: state.commitments.filter((item) => item.planId === state.plan.id && item.planVersion === state.plan.version),
+    commitmentSummary: {
+      pending: state.commitments.filter((item) => item.planId === state.plan.id && item.planVersion === state.plan.version && item.status === 'pending').length,
+      accepted: state.commitments.filter((item) => item.planId === state.plan.id && item.planVersion === state.plan.version && item.status === 'accepted').length,
+      declined: state.commitments.filter((item) => item.planId === state.plan.id && item.planVersion === state.plan.version && item.status === 'declined').length,
+    },
+    ...(state.approvalIntent ? { pendingHumanApproval: state.approvalIntent } : {}),
     summary,
-    lastChange: state.activity[0] ?? null,
-    disruptionPreview: state.disruptionPreview ?? null,
+    lastChange: state.activity[0] ? {
+      action: state.activity[0].action,
+      summary: state.activity[0].summary,
+      planVersionAfter: state.activity[0].planVersionAfter,
+    } : null,
   };
 }
 
@@ -163,7 +202,7 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
       const result: ToolResult<unknown> = {
         ok: true,
         data: {
-          workspace: { name: 'Mutual Mesh demo', schemaVersion: state.schemaVersion },
+          workspace: { name: 'Mutual Mesh', schemaVersion: state.schemaVersion },
           demoMode: true,
           goal: state.goal,
           constraints: state.constraints,
@@ -177,11 +216,8 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
             pending: state.commitments.filter((item) => item.status === 'pending').length,
             accepted: state.commitments.filter((item) => item.status === 'accepted').length,
           },
-          nextSafeOperations: [
-            'Search contributions for each open capability gap.',
-            `Inspect and validate plan version ${state.plan.version} before revising it.`,
-            'Keep draftOnly true; participant contact and publication require separate human-authorized tools.',
-          ],
+          ...(state.approvalIntent ? { pendingHumanApproval: state.approvalIntent } : {}),
+          nextSafeOperations: ['Search each gap.', `Inspect and validate version ${state.plan.version} before writing.`],
         },
       };
       return report('get_coordination_context', result);
@@ -192,37 +228,44 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
       if (!parsed.success) return report('search_contributions', invalidInput(parsed.error));
       const state = dependencies.getScenario();
       const filters = parsed.data;
-      const query = filters.capabilityQuery?.toLowerCase();
-      const requestedTags = filters.tags?.map((tag) => tag.toLowerCase()) ?? [];
+      const queryTokens = filters.capabilityQuery ? normalizeSearchText(filters.capabilityQuery).split(' ').filter(Boolean) : [];
+      const requestedTags = filters.tags?.map(normalizeSearchText) ?? [];
       const evaluated = state.contributions.map((contribution) => {
         const reasons: string[] = [];
-        const searchable = [contribution.capability, contribution.label, contribution.description].join(' ').toLowerCase();
-        if (query && !searchable.includes(query)) reasons.push(`Capability text does not contain “${filters.capabilityQuery}”.`);
+        const searchable = normalizeSearchText([contribution.capability, contribution.label, contribution.description].join(' '));
+        const capabilityMatched = queryTokens.length === 0 || queryTokens.every((token) => searchable.includes(token));
+        if (!capabilityMatched) reasons.push(`Capability does not match “${filters.capabilityQuery}”.`);
         if (filters.kinds && !filters.kinds.includes(contribution.kind)) reasons.push(`Kind ${contribution.kind} is outside the requested kinds.`);
         if (filters.availability && contribution.availability !== filters.availability) reasons.push(`Availability is ${contribution.availability}, not ${filters.availability}.`);
         if (filters.availableFrom && new Date(contribution.availableFrom).getTime() > new Date(filters.availableFrom).getTime()) reasons.push('Availability starts after the requested window begins.');
         if (filters.availableUntil && new Date(contribution.availableUntil).getTime() < new Date(filters.availableUntil).getTime()) reasons.push('Availability ends before the requested window closes.');
         if (filters.minCapacity !== undefined && (contribution.capacity ?? 0) < filters.minCapacity) reasons.push(`Capacity ${(contribution.capacity ?? 0)} is below ${filters.minCapacity}.`);
         if (filters.maxCost !== undefined && contribution.cost > filters.maxCost) reasons.push(`Cost $${contribution.cost} exceeds $${filters.maxCost}.`);
-        const contributionTags = contribution.accessibilityTags.map((tag) => tag.toLowerCase());
+        const contributionTags = contribution.accessibilityTags.map(normalizeSearchText);
         const missingTags = requestedTags.filter((tag) => !contributionTags.includes(tag));
         if (missingTags.length) reasons.push(`Missing tags: ${missingTags.join(', ')}.`);
-        return { contribution, reasons };
+        return { contribution, reasons, capabilityMatched };
       });
-      const matches = evaluated
+      const matching = evaluated
         .filter((item) => item.reasons.length === 0)
-        .sort((a, b) => a.contribution.cost - b.contribution.cost || a.contribution.label.localeCompare(b.contribution.label))
-        .slice(0, filters.limit)
-        .map((item) => contributionView(state, item.contribution.id));
+        .sort((a, b) => a.contribution.cost - b.contribution.cost || a.contribution.label.localeCompare(b.contribution.label));
+      const matches = matching.slice(0, filters.limit).map((item) => contributionView(state, item.contribution.id));
+      const rejected = evaluated
+        .filter((item) => item.reasons.length > 0)
+        .sort((a, b) => Number(b.capabilityMatched) - Number(a.capabilityMatched)
+          || a.reasons.length - b.reasons.length
+          || a.contribution.cost - b.contribution.cost);
       const result: ToolResult<unknown> = {
         ok: true,
         data: {
           query: filters,
-          matchCount: matches.length,
+          matchCount: matching.length,
           matches,
-          rejected: evaluated
-            .filter((item) => item.reasons.length > 0)
-            .map((item) => ({ id: item.contribution.id, label: item.contribution.label, rejectionReasons: item.reasons })),
+          hasMoreMatches: matching.length > matches.length,
+          rejectedSummary: {
+            count: rejected.length,
+            examples: rejected.slice(0, 3).map((item) => ({ id: item.contribution.id, rejectionReasons: item.reasons.slice(0, 2) })),
+          },
         },
       };
       return report('search_contributions', result);
@@ -245,7 +288,7 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
         };
         return report('inspect_plan', result);
       }
-      return report('inspect_plan', { ok: true, data: planView(state) });
+      return report('inspect_plan', { ok: true, data: planView(state, parsed.data.taskOffset, parsed.data.taskLimit) });
     },
 
     validatePlan(input: unknown) {
@@ -258,10 +301,14 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
       return report('validate_plan', {
         ok: true,
         data: {
-          ...validation,
-          errors: validation.issues.filter((issue) => issue.severity === 'error'),
-          warnings: validation.issues.filter((issue) => issue.severity === 'warning'),
-          recommendedActions: validation.issues.map((issue) => issue.recoveryHint),
+          planId: validation.planId,
+          planVersion: validation.planVersion,
+          summary: validation.summary,
+          blockingCount: validation.blockingCount,
+          warningCount: validation.warningCount,
+          readyForCommitmentRequests: validation.readyForCommitmentRequests,
+          readyToPublish: validation.readyToPublish,
+          issues: validation.issues,
         },
       });
     },
@@ -275,7 +322,7 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
         ok: true,
         data: {
           visibleChange: true,
-          plan: planView(result.scenario),
+          plan: mutationPlanView(result.scenario),
           message: `Draft saved as version ${result.scenario.plan.version}. No participant was contacted and nothing was published.`,
         },
       });
@@ -291,7 +338,7 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
         data: {
           visibleChange: true,
           appliedOperations: parsed.data.operations.length,
-          plan: planView(result.scenario),
+          plan: mutationPlanView(result.scenario),
           message: `Revision committed as draft version ${result.scenario.plan.version}. No participant was contacted and nothing was published.`,
         },
       });
@@ -316,18 +363,24 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
     requestCommitments(input: unknown) {
       const parsed = requestCommitmentsInputSchema.safeParse(input ?? {});
       if (!parsed.success) return report('request_commitments', invalidInput(parsed.error));
-      const result = dependencies.requestCommitments({ ...parsed.data, actor: 'agent' });
+      const result = dependencies.stageCommitments({ ...parsed.data, actor: 'agent' });
       if (!result.ok) return report('request_commitments', domainFailure(result.error));
+      const intent = result.scenario.approvalIntent;
       return report('request_commitments', {
         ok: true,
         data: {
           visibleChange: true,
+          canonicalPlanChanged: false,
+          awaitingHumanApproval: true,
           inAppOnly: true,
-          requestedParticipantIds: result.requestedParticipantIds,
-          skippedParticipants: result.skippedParticipants,
-          plan: planView(result.scenario),
-          requiredNextStep: 'Wait for or simulate participant responses. Publish only after every required commitment is accepted.',
-          message: 'Commitment requests exist only inside this fictional demo. No email, SMS, calendar invitation, or external message was sent.',
+          intent: intent?.type === 'request_commitments' ? {
+            id: intent.id,
+            planVersion: intent.planVersion,
+            participantCount: intent.participantIds.length,
+          } : null,
+          plan: mutationPlanView(result.scenario),
+          requiredNextStep: 'A human must approve the visible version-bound intent in the UI before any commitment request exists.',
+          message: 'Commitment requests were staged for human approval. No participant was contacted and no external message was sent.',
         },
       });
     },
@@ -335,18 +388,20 @@ export function createToolHandlers(dependencies: HandlerDependencies) {
     publishCoordinationPlan(input: unknown) {
       const parsed = publishCoordinationPlanInputSchema.safeParse(input ?? {});
       if (!parsed.success) return report('publish_coordination_plan', invalidInput(parsed.error));
-      const result = dependencies.publishPlan({ ...parsed.data, actor: 'agent' });
+      const result = dependencies.stagePublication({ ...parsed.data, actor: 'agent' });
       if (!result.ok) return report('publish_coordination_plan', domainFailure(result.error));
+      const intent = result.scenario.approvalIntent;
       return report('publish_coordination_plan', {
         ok: true,
         data: {
           visibleChange: true,
-          publicationStatus: result.scenario.plan.status,
-          immutableVersion: result.scenario.plan.version,
-          publishedAt: result.scenario.plan.publishedAt,
-          summary: calculatePlanSummary(result.scenario),
+          canonicalPlanChanged: false,
+          awaitingHumanApproval: true,
+          intent: intent?.type === 'publish_plan' ? { id: intent.id, planVersion: intent.planVersion } : null,
+          publicationStatus: 'pending_human_approval',
+          immutableVersion: null,
           externalCommunication: false,
-          message: 'The accepted plan is now an immutable in-app publication. No external message was sent.',
+          message: 'Publication was staged for human approval. Nothing was published and no external message was sent.',
         },
       });
     },

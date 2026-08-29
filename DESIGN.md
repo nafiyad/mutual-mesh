@@ -33,10 +33,11 @@ No purple, neon blue, multicolor node taxonomy, decorative gradients, or outer g
 - **Secondary action:** Paper Highlight with a Hairline Stone border. No pill-shaped primary buttons.
 - **Cards:** Use elevation only for the dark goal brief, central graph, and active workflow. Supporting panels rely on borders and negative space.
 - **Graph nodes:** Chalk surfaces on Graphite Ink, 16px radius, strong labels, quiet metadata, and one status marker. All node families share the same visual language.
-- **Graph connectors:** Use an orthogonal top-down hierarchy with explicit arrowheads and centered node anchors. Dashed edges communicate proposed plan flow; solid Civic Green edges communicate assignments or satisfied dependencies. Connectors never cross, terminate in empty space, or rely on arbitrary diagonal angles.
+- **Directed plan map:** Render every canonical task from live state. Each row reads left to right as `contributor → task`, followed by explicit `prerequisite → this task` routes. Root tasks read `goal → this task`. Never collapse tasks without labeling the collapse, reverse relationship direction, or use decorative connectors that can drift from canonical state.
 - **Inputs:** 44px minimum height, label or accessible name, Civic Green focus ring, no floating label.
 - **State:** Status copy and geometry accompany color. Error uses Muted Clay only where behavior is blocked.
-- **Drawers:** Full-height editorial sheets with large headings, readable 13–15px detail, and clear section rhythm.
+- **Drawers:** Full-height editorial sheets with large headings, readable 13–15px detail, clear section rhythm, trapped focus, Escape dismissal, and opener-focus restoration.
+- **Approval gate:** Consequential agent intent appears as an in-flow, version-bound decision surface with equally clear approve and reject actions. It never masquerades as a completed request or publication.
 
 ## 5. Layout Principles
 
@@ -46,7 +47,7 @@ No purple, neon blue, multicolor node taxonomy, decorative gradients, or outer g
 - Side panels use vertical rhythm, not a pile of equally styled cards.
 - Below 1180px, move operational status into a horizontal row beneath the graph.
 - Below 820px, collapse to a single column with the graph first, then goal, workflow, contributions, and history.
-- Below 600px, replace spatial connectors with a clean ordered node grid; never compress a desktop graph until lines or cards overlap.
+- Below 700px, preserve every relationship in a single-column semantic flow: contributor, downward fulfillment arrow, task, then prerequisite route. Never hide relationship semantics on mobile.
 - No horizontal scrolling; touch targets remain at least 44px.
 
 ## 6. Motion & Interaction

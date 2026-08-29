@@ -60,6 +60,17 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
       });
     }
 
+    const capabilityMismatches = assigned.filter((contribution) => contribution.capability !== task.requiredCapability);
+    if (capabilityMismatches.length) {
+      issues.push({
+        code: 'CAPABILITY_MISMATCH',
+        severity: 'error',
+        message: `${task.label} uses a contribution with the wrong capability.`,
+        affectedEntityIds: [task.id, ...capabilityMismatches.map((item) => item.id)],
+        recoveryHint: `Assign only contributions that provide ${task.requiredCapability}.`,
+      });
+    }
+
     const timeConflicts = assigned.filter((contribution) => !coversTaskWindow(contribution, task.startsAt, task.endsAt));
     if (timeConflicts.length) {
       issues.push({
@@ -192,8 +203,8 @@ export function validatePlan(state: ScenarioState): PlanValidationResult {
     readyForCommitmentRequests: blockingCount === 0,
     readyToPublish: blockingCount === 0 && allCommitmentsAccepted,
     checks: [
-      { key: 'entities', label: 'Entities & dependencies', status: statusFor(['DUPLICATE_ENTITY_ID', 'UNKNOWN_PLAN_GOAL', 'UNKNOWN_CONSTRAINT', 'UNKNOWN_CONTRIBUTOR', 'UNKNOWN_CONTRIBUTION', 'UNKNOWN_DEPENDENCY', 'DEPENDENCY_CYCLE']), detail: hasIssue(['DEPENDENCY_CYCLE']) ? 'A dependency cycle needs attention.' : 'IDs and dependency order are coherent.' },
-      { key: 'availability', label: 'Availability & timing', status: statusFor(['CONTRIBUTION_UNAVAILABLE', 'TIME_WINDOW_CONFLICT']), detail: 'Assigned contributions cover their task windows.' },
+      { key: 'entities', label: 'Entities & dependencies', status: statusFor(['EMPTY_PLAN', 'PLAN_TASK_LIMIT_EXCEEDED', 'DUPLICATE_ENTITY_ID', 'UNKNOWN_PLAN_GOAL', 'UNKNOWN_CONSTRAINT', 'UNKNOWN_CONTRIBUTOR', 'UNKNOWN_CONTRIBUTION', 'UNKNOWN_DEPENDENCY', 'DEPENDENCY_CYCLE']), detail: hasIssue(['DEPENDENCY_CYCLE']) ? 'A dependency cycle needs attention.' : 'IDs and dependency order are coherent.' },
+      { key: 'availability', label: 'Capability, availability & timing', status: statusFor(['CAPABILITY_MISMATCH', 'CONTRIBUTION_UNAVAILABLE', 'TIME_WINDOW_CONFLICT']), detail: 'Assigned contributions provide the required capability and cover their task windows.' },
       { key: 'capacity', label: 'Capacity & accessibility', status: statusFor(['CAPACITY_SHORTFALL', 'ACCESSIBILITY_NOT_COVERED']), detail: '50 seats, 50 snack packs, and step-free access are covered.' },
       { key: 'workload', label: 'Workload', status: statusFor(['WORKLOAD_EXCEEDED']), detail: 'No participant exceeds two assignments.' },
       { key: 'budget', label: 'Budget', status: statusFor(['BUDGET_EXCEEDED']), detail: `$${summary.budgetSpent} of $${state.goal.budgetLimit} allocated.` },

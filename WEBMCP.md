@@ -8,13 +8,13 @@ Mutual Mesh exposes nine imperative site tools over the same live coordination s
 | --- | --- | --- | --- |
 | `get_coordination_context` | Read-only | Empty closed object | Goal, constraints, summary, gaps, commitments, and next safe operations. |
 | `search_contributions` | Read-only | Bounded filters and result limit | Viable matches plus exact rejection reasons. |
-| `inspect_plan` | Read-only | Optional current plan ID/version | Complete current task graph and disruption overlay. |
+| `inspect_plan` | Read-only | Optional current plan ID/version and bounded pagination | Current task-graph page, disruption overlay, gaps, summary, and latest change. |
 | `validate_plan` | Read-only | Exact plan ID/version | Deterministic checks, errors, warnings, and recovery actions. |
 | `draft_coordination_plan` | Mutating | `draftOnly: true`, 1–12 tasks | Atomically replaces the unpublished draft and increments its version. |
 | `revise_coordination_plan` | Mutating | Exact version, 1–10 operations | Atomically assigns, unassigns, adds/removes tasks, changes time, or changes dependencies. |
 | `preview_disruption` | Visible preview | Exact version and one bounded disruption | Adds a temporary impact overlay and activity event; canonical version stays unchanged. |
-| `request_commitments` | Mutating | Exact valid version, assigned participants, `inAppOnly: true` | Creates pending fictional commitments with no external effect. |
-| `publish_coordination_plan` | Mutating | Exact accepted version and literal acknowledgement | Publishes an immutable in-app snapshot; no external effect. |
+| `request_commitments` | Approval staging | Exact valid version, assigned participants, `inAppOnly: true` | Stages a visible intent. A human must approve before fictional commitments exist. |
+| `publish_coordination_plan` | Approval staging | Exact accepted version and literal acknowledgement | Stages a visible intent. A human must approve before an immutable snapshot exists. |
 
 The browser registration loop is in [`webmcp/registerTools.ts`](webmcp/registerTools.ts):
 
@@ -52,6 +52,7 @@ The production implementation creates all nine definitions from one catalog. Eve
 - Every write requires the exact current version; `STALE_PLAN_VERSION` returns the live version and a recovery hint.
 - A disruption preview visibly records the hypothetical change while keeping the canonical plan and version unchanged.
 - A contribution being suggested, requested, accepted, declined, complete, and published are distinct states.
+- Agent calls can stage version-bound commitment and publication intents, but only a visible human action can approve or reject either consequential transition.
 - A decline is a blocking validation error. It cannot be overwritten by publication; the assignment must be revised in a new draft version.
 - Publication requires every hard validation and every assigned participant acceptance, plus the exact acknowledgement `Publish the accepted plan`.
 - Published plans reject later draft or revision calls.
@@ -84,9 +85,10 @@ type ToolResult<T> =
 6. Call `search_contributions` for `presentation-av` and select the portable display.
 7. Call `revise_coordination_plan` against v4; the repaired plan becomes v5.
 8. Call `validate_plan` against v5 and confirm zero blockers.
-9. Call `request_commitments` with assigned participant IDs and `inAppOnly: true`.
-10. In the deterministic demo, use the visible UI control to simulate responses.
-11. Call `validate_plan` again, then `publish_coordination_plan` with the literal acknowledgement.
+9. Call `request_commitments` with assigned participant IDs and `inAppOnly: true`; confirm the plan is unchanged and a human-approval intent is visible.
+10. A human approves the intent in the page, then the deterministic demo simulates responses.
+11. Call `validate_plan` again, then call `publish_coordination_plan` with the literal acknowledgement; confirm nothing publishes yet.
+12. A human approves the publication intent in the page, creating the immutable snapshot.
 
 The visible graph, readiness metrics, commitment states, tool-call inventory, and activity history provide evidence after every stage.
 
@@ -96,7 +98,7 @@ The visible graph, readiness metrics, commitment states, tool-call inventory, an
 
 - nine unique tools and correct read/write annotations;
 - strict top-level schemas and handler re-validation;
-- discovery through the full inspect, search, revise, preview, repair, request, and publish path;
+- discovery through the full inspect, search, revise, preview, repair, staged-request, and staged-publication path;
 - stale-version and unknown-field rejection;
 - visible plan changes and immutable publication; and
 - abort-driven unregistration.
@@ -105,6 +107,7 @@ Additional service and UI tests cover the simulated-decline branch and the compl
 
 ```bash
 npm test
+npm run test:agent-evals
 npm run test:e2e
 npm run lint
 npx tsc --noEmit
@@ -115,7 +118,7 @@ npm run build
 
 1. Open the live HTTPS URL directly in ChatGPT's in-app browser or a WebMCP-enabled Chrome build.
 2. Reset the deterministic demo.
-3. Open the WebMCP badge and confirm **nine tools** and **four reads · five visible preview or write actions**.
+3. Open the WebMCP badge and confirm **nine tools** and **four reads · three draft/preview actions · two approval-staging actions**.
 4. Run the canonical prompt from [README.md](README.md).
 5. Confirm each site-tool call is reflected in the canvas and recent-call state.
 6. Reset and repeat; no account or API key is required.

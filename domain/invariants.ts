@@ -37,6 +37,24 @@ export function checkScenarioInvariants(state: ScenarioState): InvariantIssue[] 
   const constraintIds = new Set(state.constraints.map((constraint) => constraint.id));
   const taskIds = new Set(state.plan.tasks.map((task) => task.id));
 
+  if (state.plan.tasks.length === 0) {
+    issues.push({ code: 'EMPTY_PLAN', message: 'A coordination plan must contain at least one task.', affectedEntityIds: [state.plan.id] });
+  } else if (state.plan.tasks.length > 12) {
+    issues.push({ code: 'PLAN_TASK_LIMIT_EXCEEDED', message: 'A coordination plan can contain at most 12 tasks.', affectedEntityIds: [state.plan.id] });
+  }
+
+  if (state.approvalIntent) {
+    if (state.approvalIntent.planId !== state.plan.id || state.approvalIntent.planVersion !== state.plan.version) {
+      issues.push({ code: 'STALE_APPROVAL_INTENT', message: 'A human approval intent must target the live plan version.', affectedEntityIds: [state.approvalIntent.id, state.plan.id] });
+    }
+    if (state.approvalIntent.type === 'request_commitments') {
+      const unknownApprovalParticipants = state.approvalIntent.participantIds.filter((id) => !participantIds.has(id));
+      if (unknownApprovalParticipants.length) {
+        issues.push({ code: 'UNKNOWN_APPROVAL_PARTICIPANT', message: 'A human approval intent references an unknown participant.', affectedEntityIds: [state.approvalIntent.id, ...unknownApprovalParticipants] });
+      }
+    }
+  }
+
   const duplicateIds = findDuplicates([
     state.goal.id,
     state.plan.id,

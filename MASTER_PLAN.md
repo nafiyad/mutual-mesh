@@ -10,7 +10,7 @@ Mutual Mesh is not a barter marketplace, generic task board, chatbot wrapper, or
 
 > Mutual Mesh turns a community goal and scattered contributions into a visible, consent-based plan that people and their AI agents can build and repair together.
 
-The flagship scenario is a free, wheelchair-accessible Career Night for 50 students with a $150 budget. The seeded graph covers venue, two speakers, presentation AV, promotion, hosting, refreshments, and transport. The canonical story closes one gap, previews a projector cancellation, repairs only the affected AV assignment, validates every hard constraint, requests fictional in-app commitments, and publishes only after acceptance.
+The flagship scenario is a free, wheelchair-accessible Career Night for 50 students with a $150 budget. The seeded graph covers venue, two speakers, presentation AV, promotion, hosting, refreshments, and transport. The canonical story compares viable and rejected options, closes one gap, previews a projector cancellation, repairs only the affected AV assignment, validates every hard constraint, and requires separate human approvals for commitment requests and publication.
 
 ## Product principles
 
@@ -28,28 +28,28 @@ The flagship scenario is a free, wheelchair-accessible Career Night for 50 stude
 
 - Responsive three-panel coordination workspace and distinct Mutual Mesh brand system.
 - Deterministic fictional Career Night state and one-click reset.
-- Searchable/filterable contributions, interactive graph, accessible table fallback, inspector, validation, and activity history.
+- Searchable/filterable contributions, state-driven directed graph, accessible table fallback, inspector, validation, and activity history.
 - Typed domain model and invariant checks for IDs, assignments, availability, time, dependency cycles, workload, capacity, accessibility, and budget.
-- Draft, revision, disruption, commitment, simulated-response, and immutable-publication services.
+- Draft, revision, disruption, commitment, human-approval, simulated-response, and immutable-publication services.
 - Nine top-level imperative WebMCP tools with strict JSON Schemas and Zod execution validation.
-- Four read operations and five bounded visible preview/write operations.
+- Four reads, three bounded draft/preview operations, and two version-bound human-approval staging operations.
 - Exact-version concurrency control and stable recovery errors.
 - Device-local persistence with no account, API key, analytics, database, or real participant data.
-- Unit, interaction, mocked-agent contract, and Playwright end-to-end tests.
+- Unit, interaction, deterministic agent-eval, mocked-agent contract, and Playwright desktop/mobile/accessibility tests.
 - GitHub Actions quality gates, MIT license, WebMCP implementation guide, demo script, and submission copy.
 - Hosted Sites deployment and public GitHub repository.
 
 ## Canonical acceptance sequence
 
 1. Reset to plan v3 with one equipment-pickup gap.
-2. Preview Carlos as a viable transport match; verify zero locked constraints change.
+2. Compare Carlos against the over-budget courier and partial-window cargo bike; verify the rejection reasons and zero locked constraints changed.
 3. Apply the revision and reach draft v4 with complete coverage.
 4. Preview Maya's projector becoming unavailable; verify the overlay is visible and canonical v4 is unchanged.
 5. Repair AV with Priya's portable display and adapter; reach draft v5.
 6. Run full validation and verify zero hard blockers.
-7. Request seven fictional in-app commitments; verify no external communication.
+7. Let the agent stage seven fictional in-app commitment requests; verify none exists until a human approves the visible intent.
 8. Simulate a decline and prove publication is blocked, or reset/replay and simulate all accept.
-9. Publish accepted plan v5 and prove later mutations are rejected.
+9. Let the agent stage publication; verify plan v5 remains accepted until a human approves, then prove the published snapshot is immutable.
 10. Review human, agent, and system activity events, then reset and repeat.
 
 ## Release gates
@@ -59,6 +59,7 @@ The flagship scenario is a free, wheelchair-accessible Career Night for 50 stude
 - [x] Read/write annotations and strict schema boundaries.
 - [x] Shared state, visible mutations, and activity evidence.
 - [x] Preview leaves canonical version unchanged.
+- [x] Agent calls cannot bypass separate human approvals for commitments or publication.
 - [x] Decline blocks publication.
 - [x] Published plan is immutable.
 - [x] Automated unit, contract, component, and Chromium flow tests.
@@ -66,7 +67,8 @@ The flagship scenario is a free, wheelchair-accessible Career Night for 50 stude
 - [x] Public repository, license, setup guide, and submission materials.
 - [ ] Confirm public, signed-out access to the final Sites version.
 - [ ] Record and upload the public under-three-minute YouTube demo with audio.
-- [ ] Complete final ChatGPT in-app-browser and Chrome WebMCP smoke runs.
+- [x] Complete local ChatGPT in-app-browser WebMCP smoke run.
+- [ ] Complete the exact deployed-version ChatGPT in-app-browser and Chrome WebMCP smoke runs after public access is enabled.
 - [ ] Submit Devpost entry and retain confirmation.
 
 The unchecked items require deployment visibility, compatible-browser state, recording, or external-account actions; they do not expand product scope.

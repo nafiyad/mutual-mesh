@@ -76,11 +76,19 @@ export function previewPlanDisruption(current: ScenarioState, input: PreviewDisr
   }
 
   const affectedCapabilities = new Set(affectedTasks.map((task) => task.requiredCapability));
+  const assignedContributionIds = new Set(current.plan.tasks.flatMap((task) => task.contributionIds));
+  const replacedContributionIds = new Set(affectedTasks.flatMap((task) => task.contributionIds));
+  const retainedBudget = current.contributions
+    .filter((contribution) => assignedContributionIds.has(contribution.id) && !replacedContributionIds.has(contribution.id))
+    .reduce((total, contribution) => total + contribution.cost, 0);
   const candidateAlternativeContributionIds = current.contributions
     .filter((contribution) => contribution.availability === 'available'
       && !excludedContributionIds.has(contribution.id)
       && affectedCapabilities.has(contribution.capability)
-      && affectedTasks.some((task) => task.requiredCapability === contribution.capability && coversTask(contribution, task)))
+      && affectedTasks.some((task) => task.requiredCapability === contribution.capability
+        && coversTask(contribution, task)
+        && (!task.capacityRequired || (contribution.capacity ?? 0) >= task.capacityRequired))
+      && retainedBudget + (assignedContributionIds.has(contribution.id) ? 0 : contribution.cost) <= current.goal.budgetLimit)
     .map((contribution) => contribution.id);
   const affectedTaskIds = affectedTasks.map((task) => task.id);
   const brokenDependencyTaskIds = current.plan.tasks

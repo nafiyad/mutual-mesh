@@ -3,7 +3,8 @@ import { createSeedScenario } from '@/data/seedScenario';
 import { checkScenarioInvariants } from '@/domain/invariants';
 import { calculatePlanSummary } from '@/domain/scoring';
 import { validatePlan } from '@/domain/validation';
-import { assignContributionToTask, previewContributionAssignment } from '@/services/coordinationService';
+import { assignContributionToTask, previewContributionAssignment, reviseDraftCoordinationPlan } from '@/services/coordinationService';
+import { migratePersistedScenario } from '@/store/migrations';
 
 describe('Mutual Mesh foundation', () => {
   it('creates the same valid scenario every time', () => {
@@ -86,5 +87,31 @@ describe('Mutual Mesh foundation', () => {
     const after = validatePlan(assigned.scenario);
     expect(after).toMatchObject({ blockingCount: 0, readyForCommitmentRequests: true, readyToPublish: false });
     expect(after.issues.map((issue) => issue.code)).toContain('COMMITMENTS_NOT_REQUESTED');
+  });
+
+  it('rejects a revision that removes the final task and never returns NaN readiness', () => {
+    const current = createSeedScenario();
+    current.plan.tasks = [structuredClone(current.plan.tasks[0])];
+    const result = reviseDraftCoordinationPlan(current, {
+      planId: current.plan.id,
+      expectedVersion: current.plan.version,
+      operations: [{ type: 'remove_task', taskId: current.plan.tasks[0].id }],
+      rationale: 'Attempt to remove the final task.',
+    });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'INVARIANT_VIOLATION' } });
+    const empty = structuredClone(current);
+    empty.plan.tasks = [];
+    expect(calculatePlanSummary(empty)).toMatchObject({ readiness: 0, totalTasks: 0, openGaps: 0 });
+  });
+
+  it('resets incomplete or corrupt persisted state to the safe seed', () => {
+    const seed = createSeedScenario();
+    const incomplete = structuredClone(seed) as unknown as Record<string, unknown>;
+    const contributions = incomplete.contributions as Array<Record<string, unknown>>;
+    delete contributions[0].accessibilityTags;
+
+    expect(migratePersistedScenario(incomplete)).toEqual(seed);
+    expect(migratePersistedScenario({ schemaVersion: 1 })).toEqual(seed);
   });
 });

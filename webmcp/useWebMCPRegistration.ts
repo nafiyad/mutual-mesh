@@ -30,8 +30,8 @@ function createSharedRegistration(context: WebMCPModelContext): SharedRegistrati
     replaceDraft: (input) => useMutualMeshStore.getState().replaceDraft(input),
     reviseDraft: (input) => useMutualMeshStore.getState().reviseDraft(input),
     previewDisruption: (input) => useMutualMeshStore.getState().previewDisruption(input),
-    requestCommitments: (input) => useMutualMeshStore.getState().requestCommitments(input),
-    publishPlan: (input) => useMutualMeshStore.getState().publishPlan(input),
+    stageCommitments: (input) => useMutualMeshStore.getState().stageCommitmentIntent(input),
+    stagePublication: (input) => useMutualMeshStore.getState().stagePublicationIntent(input),
     onExecuted: (event) => executionListeners.forEach((listener) => listener(event)),
   });
   return {

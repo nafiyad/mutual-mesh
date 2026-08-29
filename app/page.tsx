@@ -1,19 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { calculatePlanSummary } from '@/domain/scoring';
 import { validatePlan } from '@/domain/validation';
-import type { Contribution, PlanTask, ScenarioState } from '@/domain/types';
+import type { Contribution, CoordinationPlan, Goal, Participant, PlanTask, ScenarioState } from '@/domain/types';
 import { previewContributionAssignment, type AssignmentPreviewResult } from '@/services/coordinationService';
 import { useMutualMeshStore } from '@/store/useMutualMeshStore';
 import { WEBMCP_TOOL_CATALOG } from '@/webmcp/registerTools';
 import { useWebMCPRegistration } from '@/webmcp/useWebMCPRegistration';
 
-const agentPrompt = 'Inspect the live coordination context, close the equipment-transport gap, then preview Maya’s projector becoming unavailable. Repair the draft with the backup display, preserve every locked constraint, and validate the current version. Do not request commitments or publish yet.';
+const agentPrompt = 'Inspect this Career Night workspace. Compare the equipment-transport options against the pickup window and remaining budget, explain why two alternatives fail, and close the gap with the viable choice. Then preview Maya’s projector becoming unavailable, compare the replacement displays, repair the draft without changing any locked constraint, and validate the current version. Do not request commitments or publish yet.';
 const tones = ['teal', 'amber', 'blue'] as const;
 type ContributionFilter = 'all' | 'skills' | 'resources' | 'logistics';
 type InspectorTab = 'overview' | 'validation' | 'history';
-type GraphSelection = { eyebrow: string; title: string; meta: string; status: string };
+type GraphSelection = { id: string; eyebrow: string; title: string; meta: string; status: string };
 type RevisionPreview = Extract<AssignmentPreviewResult, { ok: true }>['preview'];
 
 function BrandMark() {
@@ -29,40 +29,6 @@ function BrandMark() {
 
 function StatusDot({ tone = 'ready' }: { tone?: 'ready' | 'warning' }) {
   return <span className={`status-dot status-dot-${tone}`} aria-hidden="true" />;
-}
-
-function MeshNode({
-  className,
-  eyebrow,
-  title,
-  meta,
-  status,
-  selected = false,
-  onSelect,
-}: {
-  className: string;
-  eyebrow: string;
-  title: string;
-  meta: string;
-  status?: string;
-  selected?: boolean;
-  onSelect?: () => void;
-}) {
-  return (
-    <button
-      className={`mesh-node ${className} ${selected ? 'mesh-node-selected' : ''}`}
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-    >
-      <div className="mesh-node-topline">
-        <span>{eyebrow}</span>
-        {status ? <span className="mesh-node-status">{status}</span> : null}
-      </div>
-      <strong>{title}</strong>
-      <small>{meta}</small>
-    </button>
-  );
 }
 
 function taskByKey(tasks: PlanTask[], key: string) {
@@ -87,6 +53,146 @@ function contributionDetail(contribution: Contribution) {
   return contribution.label;
 }
 
+function formatTaskWindow(task: PlanTask) {
+  const start = new Date(task.startsAt);
+  const end = new Date(task.endsAt);
+  const startDate = start.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  const endDate = end.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  const startTime = start.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+  const endTime = end.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+  return startDate === endDate
+    ? `${startDate} · ${startTime}–${endTime}`
+    : `${startDate} · ${startTime} → ${endDate} · ${endTime}`;
+}
+
+function taskDepth(task: PlanTask, tasks: PlanTask[], visiting = new Set<string>()): number {
+  if (!task.dependencyTaskIds.length || visiting.has(task.id)) return 0;
+  const nextVisiting = new Set(visiting).add(task.id);
+  return 1 + Math.max(0, ...task.dependencyTaskIds.map((id) => {
+    const dependency = tasks.find((candidate) => candidate.id === id);
+    return dependency ? taskDepth(dependency, tasks, nextVisiting) : 0;
+  }));
+}
+
+function DirectedPlanGraph({
+  goal,
+  plan,
+  contributions,
+  participants,
+  disruptionPreview,
+  selected,
+  onSelect,
+}: {
+  goal: Goal;
+  plan: CoordinationPlan;
+  contributions: Contribution[];
+  participants: Participant[];
+  disruptionPreview: ScenarioState['disruptionPreview'];
+  selected: GraphSelection | null;
+  onSelect: (selection: GraphSelection) => void;
+}) {
+  const taskMap = new Map(plan.tasks.map((task) => [task.id, task]));
+  const contributionMap = new Map(contributions.map((contribution) => [contribution.id, contribution]));
+  const participantMap = new Map(participants.map((participant) => [participant.id, participant]));
+  const orderedTasks = plan.tasks
+    .map((task, index) => ({ task, index, depth: taskDepth(task, plan.tasks) }))
+    .sort((a, b) => a.depth - b.depth || a.index - b.index);
+
+  return (
+    <div className="directed-plan" aria-label={`Directed plan map with ${plan.tasks.length} tasks`}>
+      <button
+        className={`graph-goal ${selected?.id === goal.id ? 'graph-node-selected' : ''}`}
+        type="button"
+        onClick={() => onSelect({ id: goal.id, eyebrow: 'Goal', title: goal.title, meta: goal.description, status: `${plan.tasks.length} tasks · plan v${plan.version}` })}
+        aria-pressed={selected?.id === goal.id}
+      >
+        <span>Goal</span>
+        <strong>{goal.title}</strong>
+        <small>Locked constraints flow into every task</small>
+      </button>
+
+      <div className="goal-flow" aria-hidden="true"><span>Goal → task plan</span></div>
+
+      <div className="plan-map-head" aria-hidden="true">
+        <span>Contributor</span><span>Task</span><span>Dependency direction</span>
+      </div>
+
+      <div className="plan-map-rows">
+        {orderedTasks.map(({ task, depth }) => {
+          const assigned = task.contributionIds.map((id) => contributionMap.get(id)).filter((item): item is Contribution => Boolean(item));
+          const dependencies = task.dependencyTaskIds.map((id) => taskMap.get(id)).filter((item): item is PlanTask => Boolean(item));
+          const atRisk = disruptionPreview?.affectedTaskIds.includes(task.id) ?? false;
+          const taskStatus = atRisk ? 'At risk in preview' : plan.status === 'published' ? 'Complete' : task.status === 'gap' ? 'Open gap' : task.status;
+          return (
+            <article className={`plan-map-row ${task.status === 'gap' ? 'plan-map-row-gap' : ''} ${atRisk ? 'plan-map-row-risk' : ''}`} key={task.id}>
+              <div className="graph-contributors">
+                {assigned.length ? assigned.map((contribution) => {
+                  const participant = participantMap.get(contribution.participantId);
+                  return (
+                    <button
+                      className={`graph-contributor ${selected?.id === contribution.id ? 'graph-node-selected' : ''}`}
+                      type="button"
+                      key={contribution.id}
+                      onClick={() => onSelect({
+                        id: contribution.id,
+                        eyebrow: 'Contributor',
+                        title: participant?.displayName ?? 'Unknown participant',
+                        meta: `${contribution.label}. ${contribution.description}`,
+                        status: atRisk ? 'Unavailable in preview' : contribution.availability,
+                      })}
+                      aria-pressed={selected?.id === contribution.id}
+                    >
+                      <span className="graph-avatar" aria-hidden="true">{participant?.avatarSeed ?? '—'}</span>
+                      <span><strong>{participant?.displayName ?? 'Unknown'}</strong><small>{contribution.label}</small></span>
+                    </button>
+                  );
+                }) : (
+                  <button
+                    className="graph-contributor graph-contributor-gap"
+                    type="button"
+                    onClick={() => onSelect({ id: `gap-${task.id}`, eyebrow: 'Open contribution', title: 'No owner yet', meta: `Search for ${task.requiredCapability} that covers ${formatTaskWindow(task)}.`, status: 'Unresolved' })}
+                    aria-pressed={selected?.id === `gap-${task.id}`}
+                  >
+                    <span className="graph-avatar" aria-hidden="true">+</span>
+                    <span><strong>Open contribution</strong><small>{task.requiredCapability}</small></span>
+                  </button>
+                )}
+              </div>
+
+              <span className="assignment-direction" aria-label="Contributor fulfills task">→</span>
+
+              <button
+                className={`graph-task ${selected?.id === task.id ? 'graph-node-selected' : ''}`}
+                type="button"
+                onClick={() => onSelect({
+                  id: task.id,
+                  eyebrow: `Task · level ${depth + 1}`,
+                  title: task.label,
+                  meta: `${task.requiredCapability} · ${formatTaskWindow(task)} · ${assigned.length ? `${assigned.length} contribution${assigned.length === 1 ? '' : 's'}` : 'unassigned'}`,
+                  status: taskStatus,
+                })}
+                aria-pressed={selected?.id === task.id}
+              >
+                <span className="graph-task-topline"><small>Task {String(orderedTasks.findIndex((item) => item.task.id === task.id) + 1).padStart(2, '0')}</small><b className={task.status === 'gap' || atRisk ? 'status-risk' : ''}>{taskStatus}</b></span>
+                <strong>{task.label}</strong>
+                <small>{task.requiredCapability} · {formatTaskWindow(task)}</small>
+              </button>
+
+              <div className="graph-dependencies">
+                {dependencies.length ? dependencies.map((dependency) => (
+                  <span className="dependency-route" key={dependency.id}>
+                    <span>{dependency.label}</span><b aria-hidden="true">→</b><span>This task</span>
+                  </span>
+                )) : <span className="dependency-route dependency-root"><span>Goal</span><b aria-hidden="true">→</b><span>This task</span></span>}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const goal = useMutualMeshStore((state) => state.goal);
   const constraints = useMutualMeshStore((state) => state.constraints);
@@ -96,6 +202,7 @@ export default function Home() {
   const commitments = useMutualMeshStore((state) => state.commitments);
   const activity = useMutualMeshStore((state) => state.activity);
   const disruptionPreview = useMutualMeshStore((state) => state.disruptionPreview);
+  const approvalIntent = useMutualMeshStore((state) => state.approvalIntent);
   const hasHydrated = useMutualMeshStore((state) => state.hasHydrated);
   const resetDemo = useMutualMeshStore((state) => state.resetDemo);
   const assignContribution = useMutualMeshStore((state) => state.assignContribution);
@@ -103,11 +210,12 @@ export default function Home() {
   const requestCommitments = useMutualMeshStore((state) => state.requestCommitments);
   const simulateResponses = useMutualMeshStore((state) => state.simulateResponses);
   const publishPlan = useMutualMeshStore((state) => state.publishPlan);
+  const approveIntent = useMutualMeshStore((state) => state.approveIntent);
+  const rejectIntent = useMutualMeshStore((state) => state.rejectIntent);
   const { registration: webmcp, recentCalls } = useWebMCPRegistration(hasHydrated);
 
   const [showMoreContributions, setShowMoreContributions] = useState(false);
   const [showAlternatives, setShowAlternatives] = useState(false);
-  const [fitMode, setFitMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionMessage, setActionMessage] = useState('');
@@ -118,21 +226,61 @@ export default function Home() {
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('overview');
   const [validatedVersion, setValidatedVersion] = useState<number | null>(null);
   const [toolInventoryOpen, setToolInventoryOpen] = useState(false);
+  const modalOpenerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     void useMutualMeshStore.persist.rehydrate();
   }, []);
 
   useEffect(() => {
+    if (!actionMessage) return;
+    const timer = window.setTimeout(() => setActionMessage(''), 4200);
+    return () => window.clearTimeout(timer);
+  }, [actionMessage]);
+
+  useEffect(() => {
     if (!inspectorOpen && !toolInventoryOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
+    const selector = inspectorOpen ? '.inspector-drawer' : '.tool-inventory-drawer';
+    const dialog = document.querySelector<HTMLElement>(selector);
+    if (!dialog) return;
+    const background = [
+      document.querySelector<HTMLElement>('.topbar'),
+      document.querySelector<HTMLElement>('.workspace'),
+      document.querySelector<HTMLElement>('.prototype-note'),
+    ].filter((element): element is HTMLElement => Boolean(element));
+    background.forEach((element) => { element.inert = true; });
+
+    const focusables = () => [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+    queueMicrotask(() => (focusables()[0] ?? dialog).focus());
+    const handleKeydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setInspectorOpen(false);
         setToolInventoryOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (!items.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
+    document.addEventListener('keydown', handleKeydown);
+    return () => {
+      document.removeEventListener('keydown', handleKeydown);
+      background.forEach((element) => { element.inert = false; });
+      modalOpenerRef.current?.focus();
+    };
   }, [inspectorOpen, toolInventoryOpen]);
 
   const scenario: ScenarioState = useMemo(() => ({
@@ -145,7 +293,8 @@ export default function Home() {
     commitments,
     activity,
     disruptionPreview,
-  }), [activity, commitments, constraints, contributions, disruptionPreview, goal, participants, plan]);
+    approvalIntent,
+  }), [activity, approvalIntent, commitments, constraints, contributions, disruptionPreview, goal, participants, plan]);
 
   const summary = useMemo(() => calculatePlanSummary(scenario), [scenario]);
   const validation = useMemo(() => validatePlan(scenario), [scenario]);
@@ -180,7 +329,6 @@ export default function Home() {
     resetDemo();
     setShowMoreContributions(false);
     setShowAlternatives(false);
-    setFitMode(false);
     setCopied(false);
     setSearchQuery('');
     setContributionFilter('all');
@@ -287,13 +435,44 @@ export default function Home() {
     setActionMessage(result.ok ? `Plan v${result.scenario.plan.version} published as an immutable in-app snapshot.` : `${result.error.message} ${result.error.recoveryHint}`);
   };
 
+  const approveStagedIntent = () => {
+    if (!approvalIntent) return;
+    const type = approvalIntent.type;
+    const result = approveIntent(approvalIntent.id);
+    setActionMessage(result.ok
+      ? type === 'request_commitments'
+        ? 'Human approval recorded. Version-bound in-app commitment requests now exist.'
+        : `Human approval recorded. Plan v${result.scenario.plan.version} is now published.`
+      : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const rejectStagedIntent = () => {
+    if (!approvalIntent) return;
+    const result = rejectIntent(approvalIntent.id);
+    setActionMessage(result.ok
+      ? 'Agent intent rejected. The canonical plan and participant state are unchanged.'
+      : `${result.error.message} ${result.error.recoveryHint}`);
+  };
+
+  const rememberModalOpener = () => {
+    modalOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  };
+
   const openInspector = (tab: InspectorTab) => {
+    rememberModalOpener();
     setToolInventoryOpen(false);
     setInspectorTab(tab);
     setInspectorOpen(true);
   };
 
+  const openToolInventory = () => {
+    rememberModalOpener();
+    setInspectorOpen(false);
+    setToolInventoryOpen(true);
+  };
+
   const runValidation = () => {
+    if (!inspectorOpen) rememberModalOpener();
     setValidatedVersion(plan.version);
     setInspectorTab('validation');
     setInspectorOpen(true);
@@ -308,20 +487,17 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
-  const venue = displayTask(plan.tasks, 'venue', 'Venue', 'accessible-venue');
   const av = displayTask(plan.tasks, 'av', 'Presentation AV', 'presentation-av');
-  const refreshments = displayTask(plan.tasks, 'refreshments', 'Refreshments', 'refreshments');
   const ownersForTask = (task: PlanTask) => task.contributionIds
     .map((id) => contributions.find((contribution) => contribution.id === id))
     .map((contribution) => contribution ? participantMap.get(contribution.participantId)?.displayName : undefined)
     .filter((name): name is string => Boolean(name))
     .join(', ') || 'Unassigned';
-  const avContribution = contributions.find((contribution) => av.contributionIds.includes(contribution.id));
   const usingBackupDisplay = av.contributionIds.includes('contribution-backup-display');
   const published = plan.status === 'published';
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-hydrated={hasHydrated ? 'true' : 'false'} aria-busy={!hasHydrated}>
       <header className="topbar">
         <a className="brand" href="#main-canvas" aria-label="Mutual Mesh home">
           <BrandMark />
@@ -337,14 +513,14 @@ export default function Home() {
             <small>Demo workspace</small>
             <strong>Career Night</strong>
           </span>
-          <span className="chevron" aria-hidden="true">⌄</span>
+          <span className="scenario-static">Flagship demo</span>
         </div>
 
         <div className="topbar-actions">
           <button
             className="tool-status tool-status-button"
             type="button"
-            onClick={() => { setInspectorOpen(false); setToolInventoryOpen(true); }}
+            onClick={openToolInventory}
             aria-haspopup="dialog"
           >
             <StatusDot tone={webmcp.status === 'ready' ? 'ready' : 'warning'} />
@@ -435,7 +611,13 @@ export default function Home() {
                   </article>
                 );
               })}
-              {visibleContributions.length === 0 ? <p className="empty-copy">No matching contributions. Try a skill, person, or resource.</p> : null}
+              {visibleContributions.length === 0 ? (
+                <div className="empty-copy empty-contributions">
+                  <strong>No matching contributions</strong>
+                  <span>Try a skill, person, or resource—or clear the current filters.</span>
+                  <button type="button" className="text-button" onClick={() => { setSearchQuery(''); setContributionFilter('all'); }}>Clear search and filters</button>
+                </div>
+              ) : null}
             </div>
             {!searchQuery && contributionFilter === 'all' && filteredContributions.length > 3 ? (
               <button
@@ -456,93 +638,55 @@ export default function Home() {
               <span className="eyebrow">Live coordination graph</span>
               <h2>The plan, at a glance</h2>
             </div>
-            <div className="canvas-legend" aria-label="Graph legend">
-              <span><i className="legend-line legend-suggested" /> Suggested</span>
-              <span><i className="legend-line legend-committed" /> Committed</span>
+            <div className="canvas-legend" aria-label="Relationship direction legend">
+              <span>Contributor <b aria-hidden="true">→</b> task</span>
+              <span>Prerequisite <b aria-hidden="true">→</b> dependent</span>
             </div>
-            <button
-              className="button button-ghost fit-button"
-              type="button"
-              onClick={() => setFitMode((current) => !current)}
-              aria-pressed={fitMode}
-            >
-              {fitMode ? 'Detail view' : 'Fit view'}
-            </button>
           </div>
 
-          <div className={`mesh-stage mesh-stage-${plan.status} ${fitMode ? 'mesh-stage-fit' : ''} ${transportOpen ? '' : 'mesh-stage-complete'} ${disruptionPreview ? 'mesh-stage-disrupted' : ''}`}>
+          <div className={`mesh-stage mesh-stage-${plan.status} ${transportOpen ? '' : 'mesh-stage-complete'} ${disruptionPreview ? 'mesh-stage-disrupted' : ''}`}>
             <div className="mesh-grid" aria-hidden="true" />
-            <svg className="mesh-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <defs>
-                <marker id="mesh-arrow-suggested" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M 0 0 L 8 4 L 0 8 z" />
-                </marker>
-                <marker id="mesh-arrow-committed" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M 0 0 L 8 4 L 0 8 z" />
-                </marker>
-                <marker id="mesh-arrow-warning" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M 0 0 L 8 4 L 0 8 z" />
-                </marker>
-              </defs>
-
-              <path className="mesh-edge mesh-edge-plan mesh-edge-trunk" d="M 50 25 V 29 M 14 29 H 86" />
-              <path className="mesh-edge mesh-edge-plan" d="M 14 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
-              <path className="mesh-edge mesh-edge-plan" d="M 38 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
-              <path className="mesh-edge mesh-edge-plan" d="M 62 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
-              <path className="mesh-edge mesh-edge-plan" d="M 86 29 V 33" markerEnd="url(#mesh-arrow-suggested)" />
-
-              <path className="mesh-edge mesh-edge-assignment" d="M 14 48 V 68" markerEnd="url(#mesh-arrow-committed)" />
-              <path className="mesh-edge mesh-edge-assignment" d="M 86 48 V 68" markerEnd="url(#mesh-arrow-committed)" />
-              <path
-                className={`mesh-edge ${transportOpen ? 'mesh-edge-warning' : 'mesh-edge-assignment'}`}
-                d="M 86 48 V 57 H 62 V 68"
-                markerEnd={transportOpen ? 'url(#mesh-arrow-warning)' : 'url(#mesh-arrow-committed)'}
-              />
-            </svg>
-
-            <MeshNode className="node-goal" eyebrow="Goal" title="Career Night" meta="Thursday · 6–8 PM" status={published ? 'published' : `${summary.readiness}% ready`} selected={selectedGraphNode?.title === 'Career Night'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Goal', title: 'Career Night', meta: goal.description, status: published ? 'published' : `${summary.readiness}% ready` })} />
-            <MeshNode className="node-venue" eyebrow="Task" title={venue.label} meta="Accessible · 60 seats" status="covered" selected={selectedGraphNode?.title === venue.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: venue.label, meta: `Assigned to ${ownersForTask(venue)} · step-free capacity for 60`, status: venue.status })} />
-            <MeshNode className="node-speakers" eyebrow="Task" title="Speakers" meta="2 of 2 matched" status="covered" selected={selectedGraphNode?.title === 'Speakers'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task group', title: 'Speakers', meta: 'Aisha leads interview practice; Dev runs the resume clinic.', status: '2 of 2 covered' })} />
-            <MeshNode className="node-av" eyebrow="Task" title={av.label} meta={avContribution?.label ?? 'Display needed'} status={disruptionPreview?.affectedTaskIds.includes(av.id) ? 'at risk' : published ? 'complete' : av.status} selected={selectedGraphNode?.title === av.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: av.label, meta: `Assigned to ${ownersForTask(av)} · depends on equipment pickup`, status: disruptionPreview?.affectedTaskIds.includes(av.id) ? 'disruption preview' : av.status })} />
-            <MeshNode className="node-refreshments" eyebrow="Task" title={refreshments.label} meta="$120 · 50 snack packs" status="covered" selected={selectedGraphNode?.title === refreshments.label} onSelect={() => setSelectedGraphNode({ eyebrow: 'Task', title: refreshments.label, meta: `Assigned to ${ownersForTask(refreshments)} · nut-free packs with ingredient labels`, status: refreshments.status })} />
-            <MeshNode className="node-jordan" eyebrow="Contributor" title="Jordan" meta="Community room" status="suggested" selected={selectedGraphNode?.title === 'Jordan'} onSelect={() => setSelectedGraphNode({ eyebrow: 'Contributor', title: 'Jordan', meta: 'Offers the step-free Riverside Community Hub for 60 people.', status: 'available' })} />
-            <MeshNode className="node-maya" eyebrow="Contributor" title={ownersForTask(av)} meta={usingBackupDisplay ? 'Backup display + adapter' : 'Projector'} status={disruptionPreview ? 'preview unavailable' : published ? 'committed' : av.status} selected={selectedGraphNode?.title === ownersForTask(av)} onSelect={() => setSelectedGraphNode({ eyebrow: 'Contributor', title: ownersForTask(av), meta: avContribution?.description ?? 'Presentation equipment contribution.', status: disruptionPreview ? 'preview unavailable' : av.status })} />
-            {transportOpen ? (
-              <article className="mesh-gap node-gap">
-                <span aria-hidden="true">+</span>
-                <strong>1 open gap</strong>
-                <small>Equipment pickup</small>
-              </article>
-            ) : (
-              <article className="mesh-gap mesh-gap-resolved node-gap">
-                <span aria-hidden="true">✓</span>
-                <strong>Gap covered</strong>
-                <small>Carlos · equipment pickup</small>
-              </article>
-            )}
-
-            <div className="agent-presence" role="status">
+            <div className="graph-status-row" role="status">
               <span className="agent-spark" aria-hidden="true">M</span>
-              <span><strong>{published ? 'Accepted plan is immutable' : 'Shared state is version-safe'}</strong><small>{published ? `Published v${plan.version} · ${plan.publishedAt ? new Date(plan.publishedAt).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}` : 'Human actions and nine site tools use one plan model'}</small></span>
+              <span><strong>{published ? 'Accepted plan is immutable' : 'Shared state is version-safe'}</strong><small>{published ? `Plan version ${plan.version} · immutable publication` : 'Human actions and nine site tools use one canonical plan'}</small></span>
+              <span className="graph-tool-evidence">
+                <b>{recentCalls[0] ? recentCalls[0].name : 'Agent tools ready'}</b>
+                <small>{recentCalls[0] ? `${recentCalls[0].status} · visible in shared history` : `${webmcp.registeredTools.length || WEBMCP_TOOL_CATALOG.length} structured tools share this workspace`}</small>
+              </span>
+              {disruptionPreview ? <span className="graph-state-alert"><b>Temporary preview · plan unchanged</b>{disruptionPreview.summary}</span> : null}
+              {published ? <span className="graph-state-success"><b>Published</b>Every hard check and commitment passed.</span> : null}
             </div>
 
-            {disruptionPreview ? (
-              <aside className="disruption-overlay" role="status" aria-live="polite">
-                <span className="preview-label">Temporary preview · plan unchanged</span>
-                <strong>{disruptionPreview.summary}</strong>
-                <p>{disruptionPreview.candidateAlternativeContributionIds.length} viable replacement found · risk {disruptionPreview.riskBefore} → {disruptionPreview.riskAfter}</p>
-              </aside>
+            {approvalIntent ? (
+              <section className="human-approval-gate" aria-labelledby="human-approval-title">
+                <div>
+                  <span className="eyebrow">Human authority · version-bound</span>
+                  <strong id="human-approval-title">{approvalIntent.type === 'request_commitments' ? 'Agent proposes commitment requests' : 'Agent proposes publication'}</strong>
+                  <p>{approvalIntent.type === 'request_commitments'
+                    ? `${approvalIntent.participantIds.length} in-app requests are prepared for plan v${approvalIntent.planVersion}. Nobody has been contacted.`
+                    : `Accepted plan v${approvalIntent.planVersion} is prepared, but remains unpublished until you approve.`}</p>
+                </div>
+                <div className="approval-actions">
+                  <button className="button button-ghost" type="button" onClick={rejectStagedIntent}>Reject</button>
+                  <button className="button button-primary" type="button" onClick={approveStagedIntent}>
+                    {approvalIntent.type === 'request_commitments' ? 'Approve requests' : 'Approve publication'}
+                  </button>
+                </div>
+              </section>
             ) : null}
 
-            {published ? (
-              <aside className="published-overlay" role="status">
-                <span aria-hidden="true">✓</span>
-                <div><strong>Plan v{plan.version} published</strong><small>Every hard check and required commitment passed.</small></div>
-              </aside>
-            ) : null}
+            <DirectedPlanGraph
+              goal={goal}
+              plan={plan}
+              contributions={contributions}
+              participants={participants}
+              disruptionPreview={disruptionPreview}
+              selected={selectedGraphNode}
+              onSelect={setSelectedGraphNode}
+            />
 
             {selectedGraphNode ? (
-              <aside className="graph-selection" aria-live="polite">
+              <aside className="graph-selection graph-selection-band" aria-live="polite">
                 <button type="button" onClick={() => setSelectedGraphNode(null)} aria-label="Close graph detail">×</button>
                 <span className="eyebrow">{selectedGraphNode.eyebrow}</span>
                 <strong>{selectedGraphNode.title}</strong>
@@ -620,8 +764,19 @@ export default function Home() {
                   </button>
                   {showAlternatives ? (
                     <div className="alternative-card">
-                      <strong>Carlos is available</strong>
-                      <small>Transport after 4:30 PM · capability and schedule match</small>
+                      <div className="decision-heading">
+                        <strong>3 candidates evaluated</strong>
+                        <small>Time window · remaining $30 budget · capability</small>
+                      </div>
+                      <div className="decision-candidate decision-candidate-best">
+                        <span>Recommended</span><strong>Carlos · equipment run</strong><small>Full 4:30–5:30 PM window · $0 · correct capability</small>
+                      </div>
+                      <div className="decision-candidate decision-candidate-rejected">
+                        <span>Rejected · budget</span><strong>Lina · community courier</strong><small>$45 would put the plan $15 over its locked budget.</small>
+                      </div>
+                      <div className="decision-candidate decision-candidate-rejected">
+                        <span>Rejected · timing</span><strong>Omar · cargo bike</strong><small>Availability ends at 5 PM, thirty minutes before pickup closes.</small>
+                      </div>
                       {!revisionPreview ? (
                         <button className="button button-primary" type="button" onClick={previewTransportRevision}>Preview revision</button>
                       ) : (

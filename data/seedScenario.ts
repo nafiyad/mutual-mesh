@@ -53,6 +53,8 @@ const seedScenario: ScenarioState = {
     { id: 'participant-noor', displayName: 'Noor', avatarSeed: 'NR', maxAssignments: 2, trustLabel: 'demo' },
     { id: 'participant-dev', displayName: 'Dev', avatarSeed: 'DV', maxAssignments: 1, trustLabel: 'demo' },
     { id: 'participant-malik', displayName: 'Malik', avatarSeed: 'ML', maxAssignments: 1, trustLabel: 'demo' },
+    { id: 'participant-lina', displayName: 'Lina', avatarSeed: 'LB', maxAssignments: 1, trustLabel: 'demo' },
+    { id: 'participant-omar', displayName: 'Omar', avatarSeed: 'OH', maxAssignments: 1, trustLabel: 'demo' },
   ],
   contributions: [
     {
@@ -108,6 +110,30 @@ const seedScenario: ScenarioState = {
       label: 'Portable display + USB-C adapter', description: 'A backup presentation display bundled with the adapter needed for the event laptop.',
       cost: 0, availableFrom: SETUP, availableUntil: END, locationLabel: 'Eastside',
       accessibilityTags: ['high-contrast-display'], conditions: ['Requires pickup before 5:30 PM'], availability: 'available',
+    },
+    {
+      id: 'contribution-community-courier', participantId: 'participant-lina', kind: 'transport', capability: 'equipment-transport',
+      label: 'Community courier · $45', description: 'A reliable van delivery that covers the complete pickup window but exceeds the remaining budget.',
+      cost: 45, availableFrom: '2026-09-10T16:30:00-06:00', availableUntil: SETUP, locationLabel: 'Eastside',
+      accessibilityTags: [], conditions: ['Flat $45 community rate'], availability: 'available',
+    },
+    {
+      id: 'contribution-cargo-bike', participantId: 'participant-omar', kind: 'transport', capability: 'equipment-transport',
+      label: 'Cargo bike · until 5 PM', description: 'A free cargo-bike run that ends thirty minutes before the equipment pickup window closes.',
+      cost: 0, availableFrom: '2026-09-10T16:00:00-06:00', availableUntil: '2026-09-10T17:00:00-06:00', locationLabel: 'Eastside',
+      accessibilityTags: [], conditions: ['Small equipment only'], availability: 'available',
+    },
+    {
+      id: 'contribution-rental-display', participantId: 'participant-lina', kind: 'resource', capability: 'presentation-av',
+      label: 'Rental display · $45', description: 'A presentation-ready rental display available for the full event, but outside the remaining budget.',
+      cost: 45, availableFrom: SETUP, availableUntil: END, locationLabel: 'Riverside',
+      accessibilityTags: ['high-contrast-display'], conditions: ['Payment required before pickup'], availability: 'available',
+    },
+    {
+      id: 'contribution-early-projector', participantId: 'participant-omar', kind: 'resource', capability: 'presentation-av',
+      label: 'Borrowed projector · until 7 PM', description: 'A free projector that must be returned one hour before Career Night ends.',
+      cost: 0, availableFrom: SETUP, availableUntil: '2026-09-10T19:00:00-06:00', locationLabel: 'Riverside',
+      accessibilityTags: [], conditions: ['Return by 7 PM'], availability: 'available',
     },
   ],
   plan: {

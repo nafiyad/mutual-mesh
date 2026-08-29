@@ -18,9 +18,9 @@ Before recording: use a clean compatible-browser window, open the deployed URL d
 
 ## 0:38–1:10 — Close the gap
 
-**Screen:** Copy or send the canonical prompt. Show context inspection, transport search, and the visible v3-to-v4 revision. If recording through the UI fallback, use Find a viable match, Preview revision, and Apply revision.
+**Screen:** Copy or send the canonical prompt. Show context inspection, the three-candidate transport comparison, and the visible v3-to-v4 revision. If recording through the UI fallback, use Find a viable match, Preview revision, and Apply revision.
 
-**Narration:** “Our fictional Career Night needs eight capabilities while preserving a $150 budget, fifty-person capacity, wheelchair access, and a two-task workload limit. The agent finds Carlos for equipment pickup. Before applying anything, Mutual Mesh shows readiness moving to one hundred percent and confirms that no locked constraint changes. The accepted revision becomes draft version four, and the activity trail records who changed it.”
+**Narration:** “Our fictional Career Night needs eight capabilities while preserving a $150 budget, fifty-person capacity, wheelchair access, and a two-task workload limit. Carlos covers the whole pickup window for free. Lina is fifteen dollars over the remaining budget; Omar stops thirty minutes early. Before applying anything, Mutual Mesh confirms that no locked constraint changes. The revision becomes draft version four, and the activity trail records who changed it.”
 
 ## 1:10–1:43 — Preview and repair reality
 
@@ -30,9 +30,9 @@ Before recording: use a clean compatible-browser window, open the deployed URL d
 
 ## 1:43–2:18 — Consent before publication
 
-**Screen:** Request commitments, show seven pending fictional responses, optionally show the decline control, then simulate all accept and publish v5.
+**Screen:** Have the agent stage commitment requests. Show the human approval card, approve it, show seven pending fictional responses, optionally show the decline control, then simulate all accept. Have the agent stage publication and use the separate human approval to publish v5.
 
-**Narration:** “A suggestion is not consent. Mutual Mesh creates seven fictional in-app requests and clearly sends no email, text, invitation, or external message. A simulated decline blocks publication and requires a new draft. When every required response is accepted, the human publication gate unlocks. The exact accepted version becomes an immutable in-app snapshot.”
+**Narration:** “A suggestion is not consent, and an agent is not the final authority. Its tool call only stages a version-bound intent. I approve before seven fictional in-app requests exist, and nothing leaves this browser. A decline blocks publication. After every response is accepted, the agent can only stage publication; I approve again before the exact version becomes immutable.”
 
 ## 2:18–2:42 — Proof and closing
 
@@ -45,6 +45,6 @@ Before recording: use a clean compatible-browser window, open the deployed URL d
 - Keep final duration below 2:50 and YouTube visibility Public.
 - Record the deployed URL, not localhost.
 - Include clear spoken audio and readable tool names.
-- Show WebMCP discovery, at least one structured read, one visible write, the non-mutating disruption preview, consent, and immutable publication.
+- Show WebMCP discovery, at least one structured read, one visible write, the non-mutating disruption preview, and both visible human-approval gates.
 - Avoid third-party logos, copyrighted music, personal notifications, and real participant data.
 - Add the public YouTube URL to README and Devpost after upload.

@@ -35,3 +35,42 @@ test('completes the canonical human workflow and preserves every safety gate', a
   await expect(page.getByText('Plan v5 is immutable')).toBeVisible();
   await expect(page.getByText('Canonical end-to-end story complete')).toBeVisible();
 });
+
+test('preserves graph meaning and readable WebMCP status on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Reset demo' }).click();
+
+  await expect(page.getByRole('button', { name: /WebMCP (ready|unavailable)/ })).toBeVisible();
+  await expect(page.getByLabel(/Relationship direction legend/)).toContainText('Contributor');
+  await expect(page.getByLabel(/Relationship direction legend/)).toContainText('Prerequisite');
+  await expect(page.locator('.graph-task')).toHaveCount(8);
+  await expect(page.locator('.graph-contributor')).toHaveCount(8);
+
+  const layout = await page.evaluate(() => ({
+    innerWidth: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    goalTop: document.querySelector('.goal-panel')?.getBoundingClientRect().top ?? 0,
+    graphTop: document.querySelector('.canvas-panel')?.getBoundingClientRect().top ?? 0,
+  }));
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.innerWidth);
+  expect(layout.goalTop).toBeLessThan(layout.graphTop);
+});
+
+test('traps modal focus, isolates the background, and restores the opener', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-hydrated', 'true');
+  const opener = page.getByRole('button', { name: /Open plan inspector/i });
+  await opener.click();
+
+  const dialog = page.getByRole('dialog', { name: /Career Night coordination plan/i });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('.workspace')).toHaveAttribute('inert', '');
+  await expect(page.getByRole('button', { name: 'Close plan inspector' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press('Escape');
+
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});

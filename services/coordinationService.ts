@@ -14,6 +14,8 @@ export type DraftPlanTaskInput = {
 };
 
 export type DraftCoordinationPlanInput = {
+  planId: string;
+  expectedVersion: number;
   goalId: string;
   title: string;
   rationale: string;
@@ -137,6 +139,17 @@ export function replaceDraftCoordinationPlan(
   current: ScenarioState,
   input: DraftCoordinationPlanInput,
 ): MutationResult {
+  if (input.planId !== current.plan.id) {
+    return failure('UNKNOWN_PLAN', 'That plan does not exist in this workspace.', `Use planId ${current.plan.id}.`);
+  }
+  if (input.expectedVersion !== current.plan.version) {
+    return failure(
+      'STALE_PLAN_VERSION',
+      `The plan changed after version ${input.expectedVersion} was inspected.`,
+      `Inspect the plan again, then retry against version ${current.plan.version}.`,
+      current.plan.version,
+    );
+  }
   if (input.goalId !== current.goal.id) {
     return failure('UNKNOWN_GOAL', 'The requested goal is not active in this workspace.', `Use goalId ${current.goal.id}.`);
   }
@@ -164,6 +177,7 @@ export function replaceDraftCoordinationPlan(
   };
   next.goal.status = 'drafted';
   next.disruptionPreview = undefined;
+  next.approvalIntent = undefined;
   next.activity.unshift({
     id: `activity-agent-draft-v${next.plan.version}`,
     actor: 'agent',
@@ -255,6 +269,7 @@ export function reviseDraftCoordinationPlan(
     task.status = task.contributionIds.length ? 'suggested' : 'gap';
   });
   next.disruptionPreview = undefined;
+  next.approvalIntent = undefined;
   const invalid = validateCandidate(next);
   if (invalid) return invalid;
 
@@ -324,6 +339,7 @@ export function assignContributionToTask(
   next.goal.status = 'drafted';
   next.plan.updatedAt = new Date().toISOString();
   next.disruptionPreview = undefined;
+  next.approvalIntent = undefined;
   next.activity.unshift({
     id: `activity-assign-${next.plan.version}-${input.taskId}`,
     actor: input.actor ?? 'human',

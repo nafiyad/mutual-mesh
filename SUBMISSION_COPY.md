@@ -8,13 +8,13 @@ Turn scattered help into a coordinated plan.
 
 Mutual Mesh is a shared human-agent coordination canvas for student clubs, volunteer organizers, and small community groups. A person defines an outcome and locks constraints; an agent combines available people, skills, spaces, equipment, schedules, capacity, accessibility, budget, and dependencies into one visible plan.
 
-The deterministic demo organizes a free, wheelchair-accessible Career Night for 50 students under a $150 budget. Together, a human and agent close a missing equipment-pickup gap, preview a projector cancellation without changing the real plan, repair the affected AV assignment, validate every hard constraint, request fictional in-app commitments, and publish only after every required acceptance.
+The deterministic demo organizes a free, wheelchair-accessible Career Night for 50 students under a $150 budget. Together, a human and agent compare real tradeoffs to close a missing equipment-pickup gap, preview a projector cancellation without changing the canonical plan, repair the affected AV assignment, validate every hard constraint, and move through separate human-approved commitment and publication gates.
 
 ## Why this use case is a strong fit for WebMCP
 
 Coordination depends on precise live state and domain meaning. A generic agent clicking through an interface must guess which offer satisfies a capability, whether a line is a dependency, whether a change is only a preview, and whether “assigned” implies consent. Those guesses are risky and brittle.
 
-Mutual Mesh exposes those concepts directly as nine WebMCP tools. The agent can inspect the exact goal, graph, versions, and constraints; search contributions with bounded filters; receive deterministic rejection reasons; revise one exact draft version; preview disruptions; and move through explicit consent and publication gates. The tools operate the same page and session the human is watching, so the result is both structured for the agent and immediately verifiable by the person.
+Mutual Mesh exposes those concepts directly as nine WebMCP tools. The agent can inspect the exact goal, graph, versions, and constraints; search contributions with bounded filters; receive deterministic rejection reasons; revise one exact draft version; preview disruptions; and stage consent or publication intents. The tools operate the same page and session the human is watching, so the result is both structured for the agent and immediately verifiable by the person. Consequential steps remain impossible until the human approves the visible, version-bound intent.
 
 ## How it creates a better user experience
 
@@ -30,7 +30,7 @@ Crucially, both operate one living plan rather than exchanging suggestions acros
 
 ## How WebMCP was implemented
 
-The top-level client feature-detects `document.modelContext` and imperatively registers nine tools after local state hydration. Four tools are read-only: context, contribution search, plan inspection, and validation. Five produce bounded visible preview or write effects: draft, revise, preview disruption, request in-app commitments, and publish the accepted plan.
+The top-level client feature-detects `document.modelContext` and imperatively registers nine tools after local state hydration. Four tools are read-only: context, contribution search, paginated plan inspection, and validation. Draft, revise, and disruption preview create bounded visible effects. The final two tools stage human-approval intents; they cannot contact participants or publish by themselves.
 
 Every tool publishes a closed JSON Schema with `additionalProperties: false`, and each execution handler independently re-validates input with Zod. Human controls and WebMCP handlers share the same TypeScript domain services, invariants, deterministic validation pipeline, versioned Zustand store, and activity model. Exact-version checks prevent stale writes; transactional clones prevent partial changes; an `AbortSignal` cleans up registration; and unsupported browsers retain the complete human UI.
 
@@ -38,17 +38,17 @@ The demo stores only fictional data in device-local storage. Commitment requests
 
 ## Links
 
-- Live app: https://mutual-mesh.kccdv717.chatgpt.site/
+- Live app: https://mutual-mesh.kccdv717.chatgpt.site/ (owner access until final public-access approval)
 - Public repository: https://github.com/nafiyad/mutual-mesh
 - Public YouTube demo: add after upload
 
 ## Judge prompt
 
-> Inspect this Career Night workspace. Close the equipment-pickup gap without changing any locked constraint. Preview Maya's projector becoming unavailable, repair the plan with a viable alternative, and validate the result. Keep commitment requests and publication as separate steps; do not publish yet.
+> Inspect this Career Night workspace. Compare the equipment-transport options against the pickup window and remaining budget, explain why two alternatives fail, and close the gap with the viable choice. Then preview Maya's projector becoming unavailable, compare the replacement displays, repair the draft without changing any locked constraint, and validate the current version. Do not request commitments or publish yet.
 
 Then:
 
-> Request the fictional in-app commitments. Publish the exact accepted version only after every required response is accepted.
+> Stage the fictional in-app commitment requests and stop for my approval. After I approve them and every response is accepted, stage publication of that exact version and stop for my approval again.
 
 ## Technical highlights
 
@@ -58,5 +58,5 @@ Then:
 - Exact-version, atomic domain mutations and immutable publication
 - Deterministic constraint and consent validation
 - Visible human/agent/system activity trail
-- Unit, component, mocked-agent contract, and Playwright end-to-end coverage
+- Unit, deterministic agent-eval, mocked-agent contract, and Playwright desktop/mobile/accessibility coverage
 - MIT licensed, no account or API key required

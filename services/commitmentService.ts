@@ -107,6 +107,7 @@ export function requestPlanCommitments(current: ScenarioState, input: RequestCom
   next.goal.status = 'requesting';
   next.plan.updatedAt = timestamp;
   next.disruptionPreview = undefined;
+  next.approvalIntent = undefined;
   next.activity.unshift({
     id: `activity-request-v${next.plan.version}-${next.activity.length + 1}`,
     actor: input.actor ?? 'agent',
@@ -183,6 +184,7 @@ export function publishCoordinationPlan(current: ScenarioState, input: PublishCo
   next.plan.tasks.forEach((task) => { task.status = 'complete'; });
   next.goal.status = 'published';
   next.disruptionPreview = undefined;
+  next.approvalIntent = undefined;
   next.activity.unshift({
     id: `activity-publish-v${next.plan.version}`,
     actor: input.actor ?? 'agent',

@@ -27,8 +27,8 @@ export const WEBMCP_TOOL_CATALOG: ToolCatalogEntry[] = [
   { name: 'draft_coordination_plan', title: 'Draft coordination plan', description: 'Replace the unpublished draft with a complete bounded task proposal. This never contacts participants or publishes.', access: 'write' },
   { name: 'revise_coordination_plan', title: 'Revise coordination plan', description: 'Apply up to ten version-safe operations as one transactional draft revision. This never contacts participants or publishes.', access: 'write' },
   { name: 'preview_disruption', title: 'Preview disruption', description: 'Show the visible impact of an unavailable contribution, unavailable participant, time shift, or capacity reduction without changing the canonical plan.', access: 'write' },
-  { name: 'request_commitments', title: 'Request commitments', description: 'Create simulated in-app commitment requests for assigned participants on a validated plan. This sends no external messages.', access: 'write' },
-  { name: 'publish_coordination_plan', title: 'Publish coordination plan', description: 'Publish the exact accepted plan version as an immutable in-app snapshot after every validation and consent gate passes.', access: 'write' },
+  { name: 'request_commitments', title: 'Stage commitment requests', description: 'Prepare version-bound in-app commitment requests for explicit human approval. This contacts nobody and sends no external messages.', access: 'write' },
+  { name: 'publish_coordination_plan', title: 'Stage plan publication', description: 'Prepare the exact accepted plan version for explicit human publication approval. This tool cannot publish by itself.', access: 'write' },
 ];
 
 export function createRegisteredTools(handlers: MutualMeshToolHandlers): WebMCPTool[] {
@@ -36,7 +36,7 @@ export function createRegisteredTools(handlers: MutualMeshToolHandlers): WebMCPT
     {
       ...WEBMCP_TOOL_CATALOG[0],
       inputSchema: emptyInputJsonSchema,
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: (input) => handlers.getCoordinationContext(input),
     },
     {
@@ -54,7 +54,7 @@ export function createRegisteredTools(handlers: MutualMeshToolHandlers): WebMCPT
     {
       ...WEBMCP_TOOL_CATALOG[3],
       inputSchema: validatePlanInputJsonSchema,
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: (input) => handlers.validatePlan(input),
     },
     {

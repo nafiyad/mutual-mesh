@@ -110,6 +110,26 @@ export type DisruptionPreview = {
   createdAt: string;
 };
 
+export type ApprovalIntent =
+  | {
+      id: string;
+      type: 'request_commitments';
+      planId: string;
+      planVersion: number;
+      participantIds: string[];
+      message: string;
+      createdBy: 'agent';
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: 'publish_plan';
+      planId: string;
+      planVersion: number;
+      createdBy: 'agent';
+      createdAt: string;
+    };
+
 export type ScenarioState = {
   schemaVersion: 1;
   goal: Goal;
@@ -120,6 +140,7 @@ export type ScenarioState = {
   commitments: Commitment[];
   activity: ActivityEvent[];
   disruptionPreview?: DisruptionPreview;
+  approvalIntent?: ApprovalIntent;
 };
 
 export type DomainError = {
